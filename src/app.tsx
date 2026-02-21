@@ -1,6 +1,8 @@
 import 'src/global.css';
+import 'react-toastify/dist/ReactToastify.css';
 
 import { useEffect } from 'react';
+import { ToastContainer } from 'react-toastify';
 
 import Fab from '@mui/material/Fab';
 
@@ -41,6 +43,7 @@ export default function App({ children }: AppProps) {
   return (
     <ThemeProvider>
       {children}
+      <ToastContainer />
       {/* {githubButton()} */}
     </ThemeProvider>
   );

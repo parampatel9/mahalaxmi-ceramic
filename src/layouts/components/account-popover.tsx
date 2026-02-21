@@ -1,5 +1,7 @@
+import type { AppDispatch } from 'src/redux/store';
 import type { IconButtonProps } from '@mui/material/IconButton';
 
+import { useDispatch } from 'react-redux';
 import { useState, useCallback } from 'react';
 
 import Box from '@mui/material/Box';
@@ -15,6 +17,7 @@ import MenuItem, { menuItemClasses } from '@mui/material/MenuItem';
 import { useRouter, usePathname } from 'src/routes/hooks';
 
 import { _myAccount } from 'src/_mock';
+import { logout } from 'src/redux/slices/authSlice';
 
 // ----------------------------------------------------------------------
 
@@ -29,6 +32,7 @@ export type AccountPopoverProps = IconButtonProps & {
 
 export function AccountPopover({ data = [], sx, ...other }: AccountPopoverProps) {
   const router = useRouter();
+  const dispatch = useDispatch<AppDispatch>();
 
   const pathname = usePathname();
 
@@ -41,6 +45,16 @@ export function AccountPopover({ data = [], sx, ...other }: AccountPopoverProps)
   const handleClosePopover = useCallback(() => {
     setOpenPopover(null);
   }, []);
+
+  const handleLogout = useCallback(async () => {
+    try {
+      handleClosePopover();
+      await dispatch(logout());
+      router.replace('/sign-in');
+    } catch (error) {
+      console.error('Logout failed:', error);
+    }
+  }, [dispatch, handleClosePopover, router]);
 
   const handleClickItem = useCallback(
     (path: string) => {
@@ -129,7 +143,7 @@ export function AccountPopover({ data = [], sx, ...other }: AccountPopoverProps)
         <Divider sx={{ borderStyle: 'dashed' }} />
 
         <Box sx={{ p: 1 }}>
-          <Button fullWidth color="error" size="medium" variant="text">
+          <Button fullWidth color="error" size="medium" variant="text" onClick={handleLogout}>
             Logout
           </Button>
         </Box>

@@ -1,9 +1,10 @@
-import { useState, useCallback } from 'react';
+import * as Yup from 'yup';
+import { useFormik } from 'formik';
+import { useState, useEffect } from 'react';
 
 import Box from '@mui/material/Box';
-import Link from '@mui/material/Link';
+import Alert from '@mui/material/Alert';
 import Button from '@mui/material/Button';
-import Divider from '@mui/material/Divider';
 import TextField from '@mui/material/TextField';
 import IconButton from '@mui/material/IconButton';
 import Typography from '@mui/material/Typography';
@@ -11,32 +12,66 @@ import InputAdornment from '@mui/material/InputAdornment';
 
 import { useRouter } from 'src/routes/hooks';
 
+import { login } from 'src/redux/slices/authSlice';
+import { useAppDispatch, useAppSelector } from 'src/redux/hooks';
+
 import { Iconify } from 'src/components/iconify';
 
 // ----------------------------------------------------------------------
 
 export function SignInView() {
   const router = useRouter();
+  const dispatch = useAppDispatch();
+  const { signupLoading, error, data } = useAppSelector((state) => state.auth);
 
   const [showPassword, setShowPassword] = useState(false);
 
-  const handleSignIn = useCallback(() => {
-    router.push('/');
-  }, [router]);
+  useEffect(() => {
+    if (data) {
+      router.push('/');
+    }
+  }, [data, router]);
+
+  const validationSchema = Yup.object().shape({
+    email: Yup.string().required('Email is required').email('Email must be a valid email address'),
+    password: Yup.string().required('Password is required'),
+  });
+
+  const formik = useFormik({
+    initialValues: {
+      email: 'hello@gmail.com',
+      password: '@demo1234',
+    },
+    validationSchema,
+    onSubmit: async (values) => {
+      dispatch(login(values));
+    },
+  });
+
+  const { errors, touched, handleSubmit, getFieldProps } = formik;
 
   const renderForm = (
     <Box
+      component="form"
+      onSubmit={handleSubmit}
       sx={{
         display: 'flex',
         alignItems: 'flex-end',
         flexDirection: 'column',
       }}
     >
+      {error && (
+        <Alert severity="error" sx={{ mb: 3, width: '100%' }}>
+          {error}
+        </Alert>
+      )}
+
       <TextField
         fullWidth
-        name="email"
         label="Email address"
-        defaultValue="hello@gmail.com"
+        {...getFieldProps('email')}
+        error={Boolean(touched.email && errors.email)}
+        helperText={touched.email && errors.email}
         sx={{ mb: 3 }}
         slotProps={{
           inputLabel: { shrink: true },
@@ -45,9 +80,10 @@ export function SignInView() {
 
       <TextField
         fullWidth
-        name="password"
         label="Password"
-        defaultValue="@demo1234"
+        {...getFieldProps('password')}
+        error={Boolean(touched.password && errors.password)}
+        helperText={touched.password && errors.password}
         type={showPassword ? 'text' : 'password'}
         slotProps={{
           inputLabel: { shrink: true },
@@ -64,13 +100,14 @@ export function SignInView() {
         sx={{ mb: 3 }}
       />
 
+
       <Button
         fullWidth
         size="large"
         type="submit"
         color="inherit"
         variant="contained"
-        onClick={handleSignIn}
+        loading={signupLoading}
       >
         Sign in
       </Button>
@@ -94,3 +131,5 @@ export function SignInView() {
     </>
   );
 }
+
+
