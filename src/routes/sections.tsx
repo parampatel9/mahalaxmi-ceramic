@@ -20,6 +20,11 @@ export const UserPage = lazy(() => import('src/pages/user'));
 export const SignInPage = lazy(() => import('src/pages/sign-in'));
 export const ProductsPage = lazy(() => import('src/pages/products'));
 export const Page404 = lazy(() => import('src/pages/page-not-found'));
+export const ClientsPage = lazy(() => import('src/pages/clients'));
+export const ClientItemsPage = lazy(() => import('src/pages/client-items'));
+export const ItemTypesPage = lazy(() => import('src/pages/item-types'));
+export const CustomersPage = lazy(() => import('src/pages/customers'));
+export const ClientHistoryPage = lazy(() => import('src/pages/client-history'));
 
 const renderFallback = () => (
   <Box
@@ -57,6 +62,11 @@ export const routesSection: RouteObject[] = [
       { path: 'user', element: <UserPage /> },
       { path: 'products', element: <ProductsPage /> },
       { path: 'blog', element: <BlogPage /> },
+      { path: 'clients', element: <ClientsPage /> },
+      { path: 'clients/:clientId/items', element: <ClientItemsPage /> },
+      { path: 'item-types', element: <ItemTypesPage /> },
+      { path: 'customers', element: <CustomersPage /> },
+      { path: 'client-history', element: <ClientHistoryPage /> },
     ],
   },
   {
