@@ -39,8 +39,8 @@ export function SignInView() {
 
   const formik = useFormik({
     initialValues: {
-      email: 'hello@gmail.com',
-      password: '@demo1234',
+      email: 'parampatel50329@gmail.com',
+      password: 'Param@1234',
     },
     validationSchema,
     onSubmit: async (values) => {
