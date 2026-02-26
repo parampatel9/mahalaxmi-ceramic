@@ -1,3 +1,6 @@
+import type { AxiosError } from 'axios';
+
+import { toast } from 'react-toastify';
 import { useNavigate } from 'react-router-dom';
 import { useState, useEffect, useCallback } from 'react';
 
@@ -18,24 +21,20 @@ import TableContainer from '@mui/material/TableContainer';
 import TableSortLabel from '@mui/material/TableSortLabel';
 import InputAdornment from '@mui/material/InputAdornment';
 import TablePagination from '@mui/material/TablePagination';
-import CircularProgress from '@mui/material/CircularProgress';
 
+import { useAppDispatch } from 'src/redux/hooks';
+import { showAlert } from 'src/redux/slices/alertSlice';
 import { DashboardContent } from 'src/layouts/dashboard';
 import {
-  addClient,
-  getClient,
   getClients,
   type Client,
-  updateClient,
   deleteClient,
-  type ClientPayload,
 } from 'src/redux/apis/clientsApis';
 
 import { Iconify } from 'src/components/iconify';
 import { Scrollbar } from 'src/components/scrollbar';
 
 import { emptyRows } from '../utils';
-import { ClientFormDialog } from '../client-form-dialog';
 import { ClientDeleteDialog } from '../client-delete-dialog';
 
 // ----------------------------------------------------------------------
@@ -81,19 +80,31 @@ function useTable() {
   };
 }
 
+function getApiMessage(response: { message?: string; data?: unknown }) {
+  if (typeof response?.data === 'string' && response.data.trim()) return response.data;
+  if (typeof response?.message === 'string' && response.message.trim()) return response.message;
+  return '';
+}
+
+function getApiErrorMessage(err: unknown) {
+  const axiosError = err as AxiosError<{ message?: string; data?: string }>;
+  const backendMessage = axiosError?.response?.data?.message || axiosError?.response?.data?.data;
+  if (typeof backendMessage === 'string' && backendMessage.trim()) return backendMessage;
+  if (typeof axiosError?.message === 'string' && axiosError.message.trim()) return axiosError.message;
+  return '';
+}
+
 // ----------------------------------------------------------------------
 
 export function ClientView() {
   const navigate = useNavigate();
+  const dispatch = useAppDispatch();
   const table = useTable();
   const [clients, setClients] = useState<Client[]>([]);
   const [totalClients, setTotalClients] = useState(0);
   const [loading, setLoading] = useState(true);
   const [filterName, setFilterName] = useState('');
   const [debouncedFilterName, setDebouncedFilterName] = useState('');
-  const [formOpen, setFormOpen] = useState(false);
-  const [editClient, setEditClient] = useState<Client | null>(null);
-  const [editLoading, setEditLoading] = useState<string | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [clientToDelete, setClientToDelete] = useState<Client | null>(null);
 
@@ -131,44 +142,22 @@ export function ClientView() {
   const notFound = !loading && !dataFiltered.length && !!filterName;
 
   const handleOpenNew = useCallback(() => {
-    setEditClient(null);
-    setFormOpen(true);
-  }, []);
+    navigate('/clients/new');
+  }, [navigate]);
 
-  const handleOpenEdit = useCallback(async (row: Client) => {
-    setEditLoading(row._id);
-    try {
-      const fresh = await getClient(row._id);
-      setEditClient(fresh);
-    } catch {
-      setEditClient(row);
-    } finally {
-      setEditLoading(null);
-      setFormOpen(true);
-    }
-  }, []);
+  const handleOpenNewItemType = useCallback(() => {
+    navigate('/item-types/new');
+  }, [navigate]);
 
-  const handleCloseForm = useCallback(() => {
-    setFormOpen(false);
-    setEditClient(null);
-  }, []);
+  const handleViewItemTypes = useCallback(() => {
+    navigate('/item-types');
+  }, [navigate]);
 
-  const handleFormSubmit = useCallback(
-    async (clientName: string, totalItem: number) => {
-      const payload: ClientPayload = { clientName, totalItem };
-      try {
-        if (editClient) {
-          await updateClient(editClient._id, payload);
-        } else {
-          await addClient(payload);
-        }
-        await fetchClients();
-        handleCloseForm();
-      } catch (err) {
-        console.error(err);
-      }
+  const handleOpenEdit = useCallback(
+    (row: Client) => {
+      navigate(`/clients/${row._id}/edit`);
     },
-    [editClient, fetchClients, handleCloseForm]
+    [navigate]
   );
 
   const handleOpenDelete = useCallback((row: Client) => {
@@ -184,13 +173,24 @@ export function ClientView() {
   const handleConfirmDelete = useCallback(async () => {
     if (!clientToDelete) return;
     try {
-      await deleteClient(clientToDelete._id);
+      const response = await deleteClient(clientToDelete._id);
+      const successMessage = getApiMessage(response);
+
+      if (successMessage) {
+        toast.success(successMessage);
+        dispatch(showAlert({ message: successMessage, severity: 'success' }));
+      }
       await fetchClients();
       handleCloseDelete();
     } catch (err) {
       console.error(err);
+      const errorMessage = getApiErrorMessage(err);
+      if (errorMessage) {
+        toast.error(errorMessage);
+        dispatch(showAlert({ message: errorMessage, severity: 'error' }));
+      }
     }
-  }, [clientToDelete, fetchClients, handleCloseDelete]);
+  }, [clientToDelete, dispatch, fetchClients, handleCloseDelete]);
 
   return (
     <DashboardContent>
@@ -204,6 +204,22 @@ export function ClientView() {
       >
         <Typography variant="h4">Clients</Typography>
         <Box sx={{ display: 'flex', gap: 1 }}>
+          <Button
+            variant="outlined"
+            color="inherit"
+            startIcon={<Iconify icon="solar:eye-bold" />}
+            onClick={handleViewItemTypes}
+          >
+            View Item Types
+          </Button>
+          <Button
+            variant="contained"
+            color="inherit"
+            startIcon={<Iconify icon="mingcute:add-line" />}
+            onClick={handleOpenNewItemType}
+          >
+            New Item Type
+          </Button>
           <Button
             variant="contained"
             color="inherit"
@@ -254,7 +270,6 @@ export function ClientView() {
                 <TableRow>
                   {[
                     { id: 'clientName', label: 'Client Name' },
-                    { id: 'totalItem', label: 'Total Item' },
                   ].map((column) => (
                     <TableCell key={column.id} sortDirection={table.orderBy === column.id ? table.order : false}>
                       <TableSortLabel
@@ -278,7 +293,6 @@ export function ClientView() {
                   </TableRow>
                 ) : (
                   dataFiltered
-                    .slice(table.page * table.rowsPerPage, table.page * table.rowsPerPage + table.rowsPerPage)
                     .map((row) => (
                       <TableRow
                         hover
@@ -289,21 +303,11 @@ export function ClientView() {
                         <TableCell component="th" scope="row">
                           {row.clientName}
                         </TableCell>
-                        <TableCell>{row.totalItem}</TableCell>
                         <TableCell align="right" onClick={(e) => e.stopPropagation()}>
                           <Tooltip title="Edit">
-                            <span>
-                              <IconButton
-                                onClick={() => handleOpenEdit(row)}
-                                disabled={editLoading === row._id}
-                              >
-                                {editLoading === row._id ? (
-                                  <CircularProgress size={20} />
-                                ) : (
-                                  <Iconify icon="solar:pen-bold" />
-                                )}
-                              </IconButton>
-                            </span>
+                            <IconButton onClick={() => handleOpenEdit(row)}>
+                              <Iconify icon="solar:pen-bold" />
+                            </IconButton>
                           </Tooltip>
                           <Tooltip title="Delete">
                             <IconButton color="error" onClick={() => handleOpenDelete(row)}>
@@ -339,7 +343,7 @@ export function ClientView() {
 
                 <TableEmptyRows
                   height={68}
-                  emptyCount={emptyRows(table.page, table.rowsPerPage, dataFiltered.length)}
+                  emptyCount={emptyRows(0, table.rowsPerPage, dataFiltered.length)}
                 />
               </TableBody>
             </Table>
@@ -357,15 +361,6 @@ export function ClientView() {
           labelRowsPerPage="Rows per page :"
         />
       </Card>
-
-      <ClientFormDialog
-        open={formOpen}
-        onClose={handleCloseForm}
-        onSubmit={handleFormSubmit}
-        client={editClient}
-        title={editClient ? 'Edit Client' : 'New Client'}
-        submitLabel={editClient ? 'Update' : 'Create'}
-      />
 
       <ClientDeleteDialog
         open={deleteDialogOpen}

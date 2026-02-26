@@ -25,35 +25,63 @@ export type ItemTypePayload = {
   itemType: string;
 };
 
+export type ApiResponse<T> = {
+  status: number;
+  message: string;
+  data: T;
+};
+
+export type ItemTypeMutationResponse = ApiResponse<ItemType | string | null>;
+
+function normalizeMutationResponse(payload: any): ItemTypeMutationResponse {
+  if (
+    payload &&
+    typeof payload === 'object' &&
+    typeof payload.status === 'number' &&
+    typeof payload.message === 'string' &&
+    'data' in payload
+  ) {
+    return payload as ItemTypeMutationResponse;
+  }
+
+  return {
+    status: typeof payload?.status === 'number' ? payload.status : 200,
+    message: typeof payload?.message === 'string' ? payload.message : '',
+    data: payload?.data ?? payload ?? null,
+  };
+}
+
 export const getItemTypes = async (params?: {
   page?: number;
   limit?: number;
   searchFields?: string;
 }): Promise<ItemTypeResponse> => {
-  const res = await axios.get<ItemTypeResponse>('/item-types', {
-    params,
+  const res = await axios.post<ItemTypeResponse>('/item-types/list', {
+    searchFields: params?.searchFields ?? '',
+    page: params?.page ?? 1,
+    limit: params?.limit ?? 15,
   });
   const body = res.data;
   return {
     data: Array.isArray(body?.data) ? body.data : [],
     pagination:
-      body?.pagination ?? { total: 0, page: 1, limit: 10, totalPages: 0 },
+      body?.pagination ?? { total: 0, page: 1, limit: 15, totalPages: 0 },
   };
 };
 
 export const addItemType = async (
   data: ItemTypePayload
-): Promise<ItemType> => {
-  const response = await axios.post<ItemType>('/item-types', data);
-  return response.data;
+): Promise<ItemTypeMutationResponse> => {
+  const response = await axios.post('/item-types', data);
+  return normalizeMutationResponse(response.data);
 };
 
 export const updateItemType = async (
   id: string,
   data: ItemTypePayload
-): Promise<ItemType> => {
-  const response = await axios.put<ItemType>(`/item-types/${id}`, data);
-  return response.data;
+): Promise<ItemTypeMutationResponse> => {
+  const response = await axios.put(`/item-types/${id}`, data);
+  return normalizeMutationResponse(response.data);
 };
 
 export const getItemType = async (id: string): Promise<ItemType> => {
@@ -61,6 +89,7 @@ export const getItemType = async (id: string): Promise<ItemType> => {
   return response.data;
 };
 
-export const deleteItemType = async (id: string): Promise<void> => {
-  await axios.delete(`/item-types/${id}`);
+export const deleteItemType = async (id: string): Promise<ItemTypeMutationResponse> => {
+  const response = await axios.delete(`/item-types/${id}`);
+  return normalizeMutationResponse(response.data);
 };

@@ -1,14 +1,16 @@
-import type { Customer } from 'src/redux/apis/customersApis';
 import type { ClientItem } from 'src/redux/apis/clientItemsApis';
+import type { Customer, CustomerItemPayload } from 'src/redux/apis/customersApis';
 
 import { useState, useEffect } from 'react';
 
+import Box from '@mui/material/Box';
 import Select from '@mui/material/Select';
 import Dialog from '@mui/material/Dialog';
 import Button from '@mui/material/Button';
 import MenuItem from '@mui/material/MenuItem';
 import TextField from '@mui/material/TextField';
 import InputLabel from '@mui/material/InputLabel';
+import Typography from '@mui/material/Typography';
 import DialogTitle from '@mui/material/DialogTitle';
 import FormControl from '@mui/material/FormControl';
 import DialogContent from '@mui/material/DialogContent';
@@ -17,16 +19,27 @@ import FormHelperText from '@mui/material/FormHelperText';
 
 // ----------------------------------------------------------------------
 
+type FormItem = {
+  itemNumber: string;
+  boxQuantity: string;
+  size: string;
+  sellPrice: string;
+};
+
+const EMPTY_ITEM: FormItem = {
+  itemNumber: '',
+  boxQuantity: '',
+  size: '',
+  sellPrice: '',
+};
+
 type CustomerFormDialogProps = {
   open: boolean;
   onClose: () => void;
   onSubmit: (data: {
     customerName: string;
     billNumber: number;
-    itemNumber: string;
-    boxQuantity: number;
-    size: string;
-    sellPrice: number;
+    items: CustomerItemPayload[];
   }) => void;
   customer: Customer | null;
   title: string;
@@ -43,39 +56,85 @@ export function CustomerFormDialog({
   submitLabel,
   clientItems,
 }: CustomerFormDialogProps) {
-  const [selectedItemNumber, setSelectedItemNumber] = useState('');
-  const [itemNumberError, setItemNumberError] = useState(false);
+  const [customerName, setCustomerName] = useState('');
+  const [billNumber, setBillNumber] = useState('');
+  const [items, setItems] = useState<FormItem[]>([{ ...EMPTY_ITEM }]);
+  const [itemsError, setItemsError] = useState(false);
 
   useEffect(() => {
     if (open) {
-      setSelectedItemNumber(customer?.itemNumber ?? '');
-      setItemNumberError(false);
+      setCustomerName(customer?.customerName ?? '');
+      setBillNumber(customer?.billNumber ? String(customer.billNumber) : '');
+      const initialItems =
+        customer?.items && customer.items.length > 0
+          ? customer.items.map((item) => ({
+              itemNumber: item.itemNumber ?? '',
+              boxQuantity: item.boxQuantity ? String(item.boxQuantity) : '',
+              size: item.size ?? '',
+              sellPrice: item.sellPrice !== undefined ? String(item.sellPrice) : '',
+            }))
+          : [
+              {
+                itemNumber: customer?.itemNumber ?? '',
+                boxQuantity: customer?.boxQuantity ? String(customer.boxQuantity) : '',
+                size: customer?.size ?? '',
+                sellPrice: customer?.sellPrice !== undefined ? String(customer.sellPrice) : '',
+              },
+            ];
+      setItems(initialItems);
+      setItemsError(false);
     }
   }, [open, customer]);
 
+  const handleAddItem = () => {
+    setItems((prev) => [...prev, { ...EMPTY_ITEM }]);
+  };
+
+  const handleRemoveItem = (index: number) => {
+    setItems((prev) => {
+      if (prev.length === 1) return prev;
+      return prev.filter((_, i) => i !== index);
+    });
+  };
+
+  const handleItemChange = (index: number, key: keyof FormItem, value: string) => {
+    setItems((prev) => prev.map((item, i) => (i === index ? { ...item, [key]: value } : item)));
+    setItemsError(false);
+  };
+
+  const getItemTotal = (item: FormItem) => {
+    const qty = parseInt(item.boxQuantity || '0', 10);
+    const price = parseFloat(item.sellPrice || '0');
+    if (Number.isNaN(qty) || Number.isNaN(price)) return 0;
+    return qty * price;
+  };
+
+  const grandTotal = items.reduce((sum, item) => sum + getItemTotal(item), 0);
+
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    const form = e.currentTarget;
-    const customerName = (form.elements.namedItem('customerName') as HTMLInputElement)?.value?.trim() ?? '';
-    const billNumber = parseInt((form.elements.namedItem('billNumber') as HTMLInputElement)?.value || '0', 10);
-    const boxQuantity = parseInt((form.elements.namedItem('boxQuantity') as HTMLInputElement)?.value || '0', 10);
-    const size = (form.elements.namedItem('size') as HTMLInputElement)?.value?.trim() ?? '';
-    const sellPrice = parseFloat((form.elements.namedItem('sellPrice') as HTMLInputElement)?.value || '0');
+    const parsedBillNumber = parseInt(billNumber || '0', 10);
+    const parsedItems: CustomerItemPayload[] = items
+      .map((item) => {
+        const boxQuantityNum = parseInt(item.boxQuantity || '0', 10);
+        const sellPriceNum = parseFloat(item.sellPrice || '0');
+        const normalized: CustomerItemPayload = {
+          itemNumber: item.itemNumber.trim(),
+          boxQuantity: boxQuantityNum,
+          sellPrice: sellPriceNum,
+        };
+        if (item.size.trim()) normalized.size = item.size.trim();
+        return normalized;
+      })
+      .filter((item) => item.itemNumber && item.boxQuantity > 0 && item.sellPrice >= 0);
 
-    if (!selectedItemNumber) {
-      setItemNumberError(true);
+    if (parsedItems.length !== items.length) {
+      setItemsError(true);
       return;
     }
 
-    if (customerName && billNumber > 0 && boxQuantity > 0 && sellPrice >= 0) {
-      onSubmit({
-        customerName,
-        billNumber,
-        itemNumber: selectedItemNumber,
-        boxQuantity,
-        size,
-        sellPrice,
-      });
+    if (customerName.trim() && parsedBillNumber > 0 && parsedItems.length > 0) {
+      onSubmit({ customerName: customerName.trim(), billNumber: parsedBillNumber, items: parsedItems });
       onClose();
     }
   };
@@ -90,7 +149,8 @@ export function CustomerFormDialog({
             label="Customer Name"
             fullWidth
             required
-            defaultValue={customer?.customerName ?? ''}
+            value={customerName}
+            onChange={(e) => setCustomerName(e.target.value)}
             sx={{ mt: 1 }}
           />
           <TextField
@@ -100,55 +160,113 @@ export function CustomerFormDialog({
             fullWidth
             required
             inputProps={{ min: 1 }}
-            defaultValue={customer?.billNumber ?? ''}
+            value={billNumber}
+            onChange={(e) => setBillNumber(e.target.value.replace(/\D/g, ''))}
           />
-          <FormControl fullWidth required error={itemNumberError}>
-            <InputLabel id="item-number-label">Item (from client items)</InputLabel>
-            <Select
-              labelId="item-number-label"
-              value={selectedItemNumber}
-              label="Item (from client items)"
-              onChange={(e) => {
-                setSelectedItemNumber(e.target.value);
-                setItemNumberError(false);
+
+          {items.map((item, index) => (
+            <Box
+              key={`item-row-${index}`}
+              sx={{
+                p: 2,
+                border: '1px dashed',
+                borderColor: 'divider',
+                borderRadius: 1,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 2,
               }}
             >
-              {clientItems.map((item) => (
-                <MenuItem key={item._id} value={item.itemNumber}>
-                  {item.itemNumber}
-                  {typeof item.actualPrice === 'number' ? ` — ₹${item.actualPrice}` : ''}
-                </MenuItem>
-              ))}
-            </Select>
-            {itemNumberError && (
-              <FormHelperText>Select a valid item from the client item list.</FormHelperText>
-            )}
-          </FormControl>
-          <TextField
-            name="boxQuantity"
-            label="Box Quantity"
-            type="number"
-            fullWidth
-            required
-            inputProps={{ min: 1 }}
-            defaultValue={customer?.boxQuantity ?? ''}
-          />
-          <TextField
-            name="size"
-            label="Size (optional)"
-            fullWidth
-            placeholder="e.g. 24x24"
-            defaultValue={customer?.size ?? ''}
-          />
-          <TextField
-            name="sellPrice"
-            label="Sell Price"
-            type="number"
-            fullWidth
-            required
-            inputProps={{ min: 0, step: 0.01 }}
-            defaultValue={customer?.sellPrice ?? ''}
-          />
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <FormHelperText sx={{ m: 0 }}>Item #{index + 1}</FormHelperText>
+                <Button
+                  type="button"
+                  color="error"
+                  onClick={() => handleRemoveItem(index)}
+                  disabled={items.length === 1}
+                  size="small"
+                >
+                  Remove
+                </Button>
+              </Box>
+
+              <FormControl fullWidth required error={itemsError && !item.itemNumber}>
+                <InputLabel id={`item-number-label-${index}`}>Item (from client items)</InputLabel>
+                <Select
+                  labelId={`item-number-label-${index}`}
+                  value={item.itemNumber}
+                  label="Item (from client items)"
+                  onChange={(e) => handleItemChange(index, 'itemNumber', e.target.value)}
+                >
+                  {clientItems.map((clientItem) => (
+                    <MenuItem key={clientItem._id} value={clientItem.itemNumber}>
+                      {clientItem.itemNumber}
+                      {typeof clientItem.actualPrice === 'number' ? ` — ₹${clientItem.actualPrice}` : ''}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+
+              <TextField
+                label="Box Quantity"
+                type="number"
+                fullWidth
+                required
+                inputProps={{ min: 1 }}
+                value={item.boxQuantity}
+                error={itemsError && (!item.boxQuantity || parseInt(item.boxQuantity, 10) <= 0)}
+                onChange={(e) => handleItemChange(index, 'boxQuantity', e.target.value.replace(/\D/g, ''))}
+              />
+
+              <TextField
+                label="Size (optional)"
+                fullWidth
+                placeholder="e.g. 24x24"
+                value={item.size}
+                onChange={(e) => handleItemChange(index, 'size', e.target.value)}
+              />
+
+              <TextField
+                label="Sell Price"
+                type="number"
+                fullWidth
+                required
+                inputProps={{ min: 0, step: 0.01 }}
+                value={item.sellPrice}
+                error={itemsError && (item.sellPrice === '' || parseFloat(item.sellPrice) < 0)}
+                onChange={(e) => handleItemChange(index, 'sellPrice', e.target.value)}
+              />
+
+              <Typography variant="subtitle2" color="text.secondary" sx={{ textAlign: 'right' }}>
+                Item Total: ₹{getItemTotal(item).toFixed(2)}
+              </Typography>
+            </Box>
+          ))}
+
+          <Button variant="outlined" onClick={handleAddItem}>
+            Add More Item
+          </Button>
+
+          {itemsError && (
+            <FormHelperText error>
+              Please fill all item fields correctly (item number, box quantity, and sell price).
+            </FormHelperText>
+          )}
+
+          <Box
+            sx={{
+              p: 2,
+              border: '1px solid',
+              borderColor: 'divider',
+              borderRadius: 1,
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+            }}
+          >
+            <Typography variant="subtitle1">Grand Total</Typography>
+            <Typography variant="h6">₹{grandTotal.toFixed(2)}</Typography>
+          </Box>
         </DialogContent>
         <DialogActions>
           <Button type="button" onClick={onClose}>

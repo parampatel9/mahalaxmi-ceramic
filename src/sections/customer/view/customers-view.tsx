@@ -1,3 +1,7 @@
+import type { AxiosError } from 'axios';
+
+import { toast } from 'react-toastify';
+import { useNavigate } from 'react-router-dom';
 import { useState, useEffect, useCallback } from 'react';
 
 import Box from '@mui/material/Box';
@@ -17,25 +21,20 @@ import TableContainer from '@mui/material/TableContainer';
 import TableSortLabel from '@mui/material/TableSortLabel';
 import InputAdornment from '@mui/material/InputAdornment';
 import TablePagination from '@mui/material/TablePagination';
-import CircularProgress from '@mui/material/CircularProgress';
 
+import { useAppDispatch } from 'src/redux/hooks';
+import { showAlert } from 'src/redux/slices/alertSlice';
 import { DashboardContent } from 'src/layouts/dashboard';
-import { type ClientItem, getAllClientItems } from 'src/redux/apis/clientItemsApis';
 import {
-  addCustomer,
-  getCustomer,
   getCustomers,
   type Customer,
-  updateCustomer,
   deleteCustomer,
-  type CustomerPayload,
 } from 'src/redux/apis/customersApis';
 
 import { Iconify } from 'src/components/iconify';
 import { Scrollbar } from 'src/components/scrollbar';
 
 import { emptyRows } from '../utils';
-import { CustomerFormDialog } from '../customer-form-dialog';
 import { CustomerDeleteDialog } from '../customer-delete-dialog';
 
 // ----------------------------------------------------------------------
@@ -81,9 +80,26 @@ function useTable() {
   };
 }
 
+function getApiMessage(response: { message?: string; data?: unknown } | null | undefined) {
+  if (!response) return '';
+  if (typeof response.data === 'string' && response.data.trim()) return response.data;
+  if (typeof response.message === 'string' && response.message.trim()) return response.message;
+  return '';
+}
+
+function getApiErrorMessage(err: unknown) {
+  const axiosError = err as AxiosError<{ message?: string; data?: string }>;
+  const backendMessage = axiosError?.response?.data?.message || axiosError?.response?.data?.data;
+  if (typeof backendMessage === 'string' && backendMessage.trim()) return backendMessage;
+  if (typeof axiosError?.message === 'string' && axiosError.message.trim()) return axiosError.message;
+  return '';
+}
+
 // ----------------------------------------------------------------------
 
 export function CustomersView() {
+  const dispatch = useAppDispatch();
+  const navigate = useNavigate();
   const table = useTable();
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [totalCustomers, setTotalCustomers] = useState(0);
@@ -91,12 +107,9 @@ export function CustomersView() {
   const [filterName, setFilterName] = useState('');
   const [debouncedFilterName, setDebouncedFilterName] = useState('');
   const [filterBillNumber, setFilterBillNumber] = useState('');
-  const [formOpen, setFormOpen] = useState(false);
-  const [editCustomer, setEditCustomer] = useState<Customer | null>(null);
-  const [editLoading, setEditLoading] = useState<string | null>(null);
+  const [debouncedFilterBillNumber, setDebouncedFilterBillNumber] = useState('');
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [customerToDelete, setCustomerToDelete] = useState<Customer | null>(null);
-  const [clientItems, setClientItems] = useState<ClientItem[]>([]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -105,25 +118,31 @@ export function CustomersView() {
     return () => clearTimeout(timer);
   }, [filterName]);
 
-  const fetchClientItems = useCallback(async () => {
-    try {
-      const res = await getAllClientItems({ limit: 500 });
-      setClientItems(res.data);
-    } catch {
-      setClientItems([]);
-    }
-  }, []);
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedFilterBillNumber(filterBillNumber);
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [filterBillNumber]);
 
   const fetchCustomers = useCallback(async () => {
     setLoading(true);
     try {
+      const searchFields = [debouncedFilterName, debouncedFilterBillNumber]
+        .filter(Boolean)
+        .join(' ')
+        .trim();
       const sortParam = table.order === 'desc' ? `-${table.orderBy}` : table.orderBy;
+      let parsedBillNumber: number | undefined;
+      if (debouncedFilterBillNumber.length > 0) {
+        const parsed = parseInt(debouncedFilterBillNumber, 10);
+        if (!Number.isNaN(parsed)) parsedBillNumber = parsed;
+      }
       const response = await getCustomers({
         page: table.page + 1,
         limit: table.rowsPerPage,
-        search: debouncedFilterName || undefined,
-        sort: sortParam,
-        billNumber: filterBillNumber ? parseInt(filterBillNumber, 10) : undefined,
+        searchFields,
+        billNumber: parsedBillNumber,
       });
       setCustomers(response.data);
       setTotalCustomers(response.pagination?.total ?? 0);
@@ -133,72 +152,31 @@ export function CustomersView() {
     } finally {
       setLoading(false);
     }
-  }, [table.page, table.rowsPerPage, table.order, table.orderBy, debouncedFilterName, filterBillNumber]);
+  }, [
+    table.page,
+    table.rowsPerPage,
+    table.order,
+    table.orderBy,
+    debouncedFilterName,
+    debouncedFilterBillNumber,
+  ]);
 
   useEffect(() => {
     fetchCustomers();
   }, [fetchCustomers]);
 
-  useEffect(() => {
-    fetchClientItems();
-  }, [fetchClientItems]);
-
   const dataFiltered = customers;
   const notFound = !loading && !dataFiltered.length && (!!filterName || !!filterBillNumber);
 
   const handleOpenNew = useCallback(() => {
-    setEditCustomer(null);
-    setFormOpen(true);
-  }, []);
+    navigate('/customers/new');
+  }, [navigate]);
 
-  const handleOpenEdit = useCallback(async (row: Customer) => {
-    setEditLoading(row._id);
-    try {
-      const fresh = await getCustomer(row._id);
-      setEditCustomer(fresh);
-    } catch {
-      setEditCustomer(row);
-    } finally {
-      setEditLoading(null);
-      setFormOpen(true);
-    }
-  }, []);
-
-  const handleCloseForm = useCallback(() => {
-    setFormOpen(false);
-    setEditCustomer(null);
-  }, []);
-
-  const handleFormSubmit = useCallback(
-    async (data: {
-      customerName: string;
-      billNumber: number;
-      itemNumber: string;
-      boxQuantity: number;
-      size: string;
-      sellPrice: number;
-    }) => {
-      const payload: CustomerPayload = {
-        customerName: data.customerName,
-        billNumber: data.billNumber,
-        itemNumber: data.itemNumber,
-        boxQuantity: data.boxQuantity,
-        sellPrice: data.sellPrice,
-      };
-      if (data.size) payload.size = data.size;
-      try {
-        if (editCustomer) {
-          await updateCustomer(editCustomer._id, payload);
-        } else {
-          await addCustomer(payload);
-        }
-        await fetchCustomers();
-        handleCloseForm();
-      } catch (err) {
-        console.error(err);
-      }
+  const handleOpenEdit = useCallback(
+    (row: Customer) => {
+      navigate(`/customers/${row._id}/edit`);
     },
-    [editCustomer, fetchCustomers, handleCloseForm]
+    [navigate]
   );
 
   const handleOpenDelete = useCallback((row: Customer) => {
@@ -214,13 +192,23 @@ export function CustomersView() {
   const handleConfirmDelete = useCallback(async () => {
     if (!customerToDelete) return;
     try {
-      await deleteCustomer(customerToDelete._id);
+      const response = await deleteCustomer(customerToDelete._id);
+      const successMessage = getApiMessage(response);
+      if (successMessage) {
+        toast.success(successMessage);
+        dispatch(showAlert({ message: successMessage, severity: 'success' }));
+      }
       await fetchCustomers();
       handleCloseDelete();
     } catch (err) {
       console.error(err);
+      const errorMessage = getApiErrorMessage(err);
+      if (errorMessage) {
+        toast.error(errorMessage);
+        dispatch(showAlert({ message: errorMessage, severity: 'error' }));
+      }
     }
-  }, [customerToDelete, fetchCustomers, handleCloseDelete]);
+  }, [customerToDelete, dispatch, fetchCustomers, handleCloseDelete]);
 
   return (
     <DashboardContent>
@@ -294,9 +282,9 @@ export function CustomersView() {
                     { id: 'customerName', label: 'Customer' },
                     { id: 'billNumber', label: 'Bill #' },
                     { id: 'itemNumber', label: 'Item' },
-                    { id: 'boxQuantity', label: 'Qty' },
-                    { id: 'size', label: 'Size' },
-                    { id: 'sellPrice', label: 'Sell Price' },
+                    // { id: 'boxQuantity', label: 'Qty' },
+                    // { id: 'size', label: 'Size' },
+                    { id: 'grandTotal', label: 'Grand Total' },
                   ].map((col) => (
                     <TableCell key={col.id} sortDirection={table.orderBy === col.id ? table.order : false}>
                       <TableSortLabel
@@ -314,7 +302,7 @@ export function CustomersView() {
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={7} align="center" sx={{ py: 10 }}>
+                    <TableCell colSpan={5} align="center" sx={{ py: 10 }}>
                       Loading...
                     </TableCell>
                   </TableRow>
@@ -323,22 +311,15 @@ export function CustomersView() {
                     <TableRow hover key={row._id}>
                       <TableCell>{row.customerName}</TableCell>
                       <TableCell>{row.billNumber}</TableCell>
-                      <TableCell>{row.itemNumber}</TableCell>
-                      <TableCell>{row.boxQuantity}</TableCell>
-                      <TableCell>{row.size || '—'}</TableCell>
-                      <TableCell>₹{row.sellPrice}</TableCell>
+                      <TableCell>{row.itemNumber ?? row.items?.[0]?.itemNumber ?? '—'}</TableCell>
+                      {/* <TableCell>{row.boxQuantity ?? row.items?.[0]?.boxQuantity ?? '—'}</TableCell>
+                      <TableCell>{row.size || row.items?.[0]?.size || '—'}</TableCell> */}
+                      <TableCell>₹{row.grandTotal ?? row.items?.[0]?.grandTotal ?? 0}</TableCell>
                       <TableCell align="right">
                         <Tooltip title="Edit">
                           <span>
-                            <IconButton
-                              onClick={() => handleOpenEdit(row)}
-                              disabled={editLoading === row._id}
-                            >
-                              {editLoading === row._id ? (
-                                <CircularProgress size={20} />
-                              ) : (
-                                <Iconify icon="solar:pen-bold" />
-                              )}
+                            <IconButton onClick={() => handleOpenEdit(row)}>
+                              <Iconify icon="solar:pen-bold" />
                             </IconButton>
                           </span>
                         </Tooltip>
@@ -354,7 +335,7 @@ export function CustomersView() {
 
                 {notFound && (
                   <TableRow>
-                    <TableCell colSpan={7} align="center" sx={{ py: 10 }}>
+                    <TableCell colSpan={5} align="center" sx={{ py: 10 }}>
                       <Typography variant="h6" paragraph>
                         Not found
                       </Typography>
@@ -367,7 +348,7 @@ export function CustomersView() {
 
                 {!loading && !dataFiltered.length && !filterName && !filterBillNumber && (
                   <TableRow>
-                    <TableCell colSpan={7} align="center" sx={{ py: 10 }}>
+                    <TableCell colSpan={5} align="center" sx={{ py: 10 }}>
                       No sales yet. Add client items first, then create a sale.
                     </TableCell>
                   </TableRow>
@@ -393,16 +374,6 @@ export function CustomersView() {
           labelRowsPerPage="Rows per page :"
         />
       </Card>
-
-      <CustomerFormDialog
-        open={formOpen}
-        onClose={handleCloseForm}
-        onSubmit={handleFormSubmit}
-        customer={editCustomer}
-        title={editCustomer ? 'Edit Sale' : 'New Sale'}
-        submitLabel={editCustomer ? 'Update' : 'Create'}
-        clientItems={clientItems}
-      />
 
       <CustomerDeleteDialog
         open={deleteDialogOpen}

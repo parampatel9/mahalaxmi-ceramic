@@ -1,7 +1,12 @@
-import { Link as RouterLink } from 'react-router-dom';
+import type { AxiosError } from 'axios';
+
+import { toast } from 'react-toastify';
 import { useState, useEffect, useCallback } from 'react';
+import { useNavigate, Link as RouterLink } from 'react-router-dom';
 
 import Box from '@mui/material/Box';
+import Tab from '@mui/material/Tab';
+import Tabs from '@mui/material/Tabs';
 import Card from '@mui/material/Card';
 import Chip from '@mui/material/Chip';
 import Link from '@mui/material/Link';
@@ -20,17 +25,14 @@ import TableContainer from '@mui/material/TableContainer';
 import TableSortLabel from '@mui/material/TableSortLabel';
 import InputAdornment from '@mui/material/InputAdornment';
 import TablePagination from '@mui/material/TablePagination';
-import CircularProgress from '@mui/material/CircularProgress';
 
+import { useAppDispatch } from 'src/redux/hooks';
 import { getClient } from 'src/redux/apis/clientsApis';
+import { showAlert } from 'src/redux/slices/alertSlice';
 import { DashboardContent } from 'src/layouts/dashboard';
-import { getItemTypes, type ItemType } from 'src/redux/apis/itemTypesApis';
 import {
-  addClientItem,
-  getClientItem,
   getClientItems,
   type ClientItem,
-  updateClientItem,
   deleteClientItem,
   type PopulatedItemType,
 } from 'src/redux/apis/clientItemsApis';
@@ -38,7 +40,6 @@ import {
 import { Iconify } from 'src/components/iconify';
 import { Scrollbar } from 'src/components/scrollbar';
 
-import { ClientItemFormDialog } from '../client-item-form-dialog';
 import { ClientItemDeleteDialog } from '../client-item-delete-dialog';
 
 // ----------------------------------------------------------------------
@@ -94,19 +95,31 @@ type ClientItemsViewProps = {
   clientId: string;
 };
 
+function getApiMessage(response: { message?: string; data?: unknown }) {
+  if (typeof response?.data === 'string' && response.data.trim()) return response.data;
+  if (typeof response?.message === 'string' && response.message.trim()) return response.message;
+  return '';
+}
+
+function getApiErrorMessage(err: unknown) {
+  const axiosError = err as AxiosError<{ message?: string; data?: string }>;
+  const backendMessage = axiosError?.response?.data?.message || axiosError?.response?.data?.data;
+  if (typeof backendMessage === 'string' && backendMessage.trim()) return backendMessage;
+  if (typeof axiosError?.message === 'string' && axiosError.message.trim()) return axiosError.message;
+  return '';
+}
+
 export function ClientItemsView({ clientId }: ClientItemsViewProps) {
+  const navigate = useNavigate();
+  const dispatch = useAppDispatch();
   const table = useTable();
   const [items, setItems] = useState<ClientItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterName, setFilterName] = useState('');
   const [debouncedFilterName, setDebouncedFilterName] = useState('');
-  const [formOpen, setFormOpen] = useState(false);
-  const [editItem, setEditItem] = useState<ClientItem | null>(null);
-  const [editLoading, setEditLoading] = useState<string | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [itemToDelete, setItemToDelete] = useState<ClientItem | null>(null);
   const [clientName, setClientName] = useState<string>('');
-  const [itemTypes, setItemTypes] = useState<ItemType[]>([]);
   const [totalItems, setTotalItems] = useState(0);
 
   useEffect(() => {
@@ -115,15 +128,6 @@ export function ClientItemsView({ clientId }: ClientItemsViewProps) {
     }, 500);
     return () => clearTimeout(timer);
   }, [filterName]);
-
-  const fetchItemTypes = useCallback(async () => {
-    try {
-      const response = await getItemTypes({ limit: 1000 });
-      setItemTypes(response.data);
-    } catch {
-      setItemTypes([]);
-    }
-  }, []);
 
   const fetchItems = useCallback(async () => {
     if (!clientId) return;
@@ -157,55 +161,21 @@ export function ClientItemsView({ clientId }: ClientItemsViewProps) {
   useEffect(() => {
     fetchItems();
     fetchClient();
-    fetchItemTypes();
-  }, [fetchItems, fetchClient, fetchItemTypes]);
+  }, [fetchItems, fetchClient]);
 
   const dataFiltered = items; // Backend already filtered/paged
 
   const notFound = !loading && !dataFiltered.length && !!filterName;
 
   const handleOpenNew = useCallback(() => {
-    setEditItem(null);
-    setFormOpen(true);
-  }, []);
+    navigate(`/clients/${clientId}/items/new`);
+  }, [clientId, navigate]);
 
   const handleOpenEdit = useCallback(
-    async (row: ClientItem) => {
-      setEditLoading(row._id);
-      try {
-        const fresh = await getClientItem(clientId, row._id);
-        setEditItem(fresh);
-      } catch {
-        setEditItem(row);
-      } finally {
-        setEditLoading(null);
-        setFormOpen(true);
-      }
+    (row: ClientItem) => {
+      navigate(`/clients/${clientId}/items/${row._id}/edit`);
     },
-    [clientId]
-  );
-
-  const handleCloseForm = useCallback(() => {
-    setFormOpen(false);
-    setEditItem(null);
-  }, []);
-
-  const handleFormSubmit = useCallback(
-    async (itemNumber: string, actualPrice: number, itemTypeId: string) => {
-      if (!clientId) return;
-      try {
-        if (editItem) {
-          await updateClientItem(clientId, editItem._id, { itemNumber, actualPrice, itemTypeId });
-        } else {
-          await addClientItem(clientId, { itemNumber, actualPrice, itemTypeId });
-        }
-        await fetchItems();
-        handleCloseForm();
-      } catch (err) {
-        console.error(err);
-      }
-    },
-    [clientId, editItem, fetchItems, handleCloseForm]
+    [clientId, navigate]
   );
 
   const handleOpenDelete = useCallback((row: ClientItem) => {
@@ -221,13 +191,23 @@ export function ClientItemsView({ clientId }: ClientItemsViewProps) {
   const handleConfirmDelete = useCallback(async () => {
     if (!clientId || !itemToDelete) return;
     try {
-      await deleteClientItem(clientId, itemToDelete._id);
+      const response = await deleteClientItem(clientId, itemToDelete._id);
+      const successMessage = getApiMessage(response);
+      if (successMessage) {
+        toast.success(successMessage);
+        dispatch(showAlert({ message: successMessage, severity: 'success' }));
+      }
       await fetchItems();
       handleCloseDelete();
     } catch (err) {
       console.error(err);
+      const errorMessage = getApiErrorMessage(err);
+      if (errorMessage) {
+        toast.error(errorMessage);
+        dispatch(showAlert({ message: errorMessage, severity: 'error' }));
+      }
     }
-  }, [clientId, itemToDelete, fetchItems, handleCloseDelete]);
+  }, [clientId, dispatch, itemToDelete, fetchItems, handleCloseDelete]);
 
   if (!clientId) {
     return (
@@ -273,6 +253,18 @@ export function ClientItemsView({ clientId }: ClientItemsViewProps) {
         </Button>
       </Box>
 
+      <Box sx={{ mb: 3 }}>
+        <Tabs value="items" aria-label="Client tabs">
+          <Tab label="Client Items" value="items" />
+          <Tab
+            label="Client History"
+            value="history"
+            component={RouterLink}
+            to={`/clients/${clientId}/history`}
+          />
+        </Tabs>
+      </Box>
+
       <Card>
         <Toolbar
           sx={{
@@ -307,7 +299,7 @@ export function ClientItemsView({ clientId }: ClientItemsViewProps) {
                   {[
                     { id: 'itemNumber', label: 'Item Number' },
                     { id: 'itemType', label: 'Item Type' },
-                    { id: 'actualPrice', label: 'Actual Price' },
+                    // { id: 'actualPrice', label: 'Actual Price' },
                   ].map((column) => (
                     <TableCell key={column.id} sortDirection={table.orderBy === column.id ? table.order : false}>
                       <TableSortLabel
@@ -345,19 +337,14 @@ export function ClientItemsView({ clientId }: ClientItemsViewProps) {
                           '—'
                         )}
                       </TableCell>
-                      <TableCell>{row.actualPrice}</TableCell>
+                      {/* <TableCell>{row.actualPrice}</TableCell> */}
                       <TableCell align="right">
                         <Tooltip title="Edit">
                           <span>
                             <IconButton
                               onClick={() => handleOpenEdit(row)}
-                              disabled={editLoading === row._id}
                             >
-                              {editLoading === row._id ? (
-                                <CircularProgress size={20} />
-                              ) : (
-                                <Iconify icon="solar:pen-bold" />
-                              )}
+                              <Iconify icon="solar:pen-bold" />
                             </IconButton>
                           </span>
                         </Tooltip>
@@ -408,16 +395,6 @@ export function ClientItemsView({ clientId }: ClientItemsViewProps) {
           labelRowsPerPage="Rows per page :"
         />
       </Card>
-
-      <ClientItemFormDialog
-        open={formOpen}
-        onClose={handleCloseForm}
-        onSubmit={handleFormSubmit}
-        item={editItem}
-        title={editItem ? 'Edit Item' : 'New Item'}
-        submitLabel={editItem ? 'Update' : 'Create'}
-        itemTypes={itemTypes}
-      />
 
       <ClientItemDeleteDialog
         open={deleteDialogOpen}

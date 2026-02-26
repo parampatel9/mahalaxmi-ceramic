@@ -12,7 +12,7 @@ import DialogContentText from '@mui/material/DialogContentText';
 type ItemTypeDeleteDialogProps = {
   open: boolean;
   onClose: () => void;
-  onConfirm: () => void;
+  onConfirm: () => void | Promise<void>;
   item: ItemType | null;
 };
 
@@ -22,9 +22,8 @@ export function ItemTypeDeleteDialog({
   onConfirm,
   item,
 }: ItemTypeDeleteDialogProps) {
-  const handleConfirm = () => {
-    onConfirm();
-    onClose();
+  const handleConfirm = async () => {
+    await onConfirm();
   };
 
   return (

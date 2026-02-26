@@ -23,6 +23,32 @@ export type ClientItemPayload = {
   itemTypeId: string;
 };
 
+export type ApiResponse<T> = {
+  status: number;
+  message: string;
+  data: T;
+};
+
+export type ClientItemMutationResponse = ApiResponse<ClientItem | string | null>;
+
+function normalizeMutationResponse(payload: any): ClientItemMutationResponse {
+  if (
+    payload &&
+    typeof payload === 'object' &&
+    typeof payload.status === 'number' &&
+    typeof payload.message === 'string' &&
+    'data' in payload
+  ) {
+    return payload as ClientItemMutationResponse;
+  }
+
+  return {
+    status: typeof payload?.status === 'number' ? payload.status : 200,
+    message: typeof payload?.message === 'string' ? payload.message : '',
+    data: payload?.data ?? payload ?? null,
+  };
+}
+
 export type Pagination = {
   total: number;
   page: number;
@@ -39,35 +65,37 @@ export const getClientItems = async (
   clientId: string,
   params?: { page?: number; limit?: number; searchFields?: string }
 ): Promise<ClientItemResponse> => {
-  const res = await axios.get<ClientItemResponse>(`/clients/${clientId}/items`, {
-    params,
+  const res = await axios.post<ClientItemResponse>(`/clients/${clientId}/items/list`, {
+    searchFields: params?.searchFields ?? '',
+    page: params?.page ?? 1,
+    limit: params?.limit ?? 15,
   });
   const body = res.data;
   return {
     data: Array.isArray(body?.data) ? body.data : [],
     pagination:
-      body?.pagination ?? { total: 0, page: 1, limit: 10, totalPages: 0 },
+      body?.pagination ?? { total: 0, page: 1, limit: 15, totalPages: 0 },
   };
 };
 
 export const addClientItem = async (
   clientId: string,
   data: ClientItemPayload
-): Promise<ClientItem> => {
-  const response = await axios.post<ClientItem>(`/clients/${clientId}/items`, data);
-  return response.data;
+): Promise<ClientItemMutationResponse> => {
+  const response = await axios.post(`/clients/${clientId}/items`, data);
+  return normalizeMutationResponse(response.data);
 };
 
 export const updateClientItem = async (
   clientId: string,
   itemId: string,
   data: ClientItemPayload
-): Promise<ClientItem> => {
-  const response = await axios.put<ClientItem>(
+): Promise<ClientItemMutationResponse> => {
+  const response = await axios.put(
     `/clients/${clientId}/items/${itemId}`,
     data
   );
-  return response.data;
+  return normalizeMutationResponse(response.data);
 };
 
 export const getClientItem = async (
@@ -81,8 +109,9 @@ export const getClientItem = async (
 export const deleteClientItem = async (
   clientId: string,
   itemId: string
-): Promise<void> => {
-  await axios.delete(`/clients/${clientId}/items/${itemId}`);
+): Promise<ClientItemMutationResponse> => {
+  const response = await axios.delete(`/clients/${clientId}/items/${itemId}`);
+  return normalizeMutationResponse(response.data);
 };
 
 // All client items (for customer/sale form itemNumber dropdown)

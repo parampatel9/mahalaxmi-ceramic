@@ -21,10 +21,18 @@ export const SignInPage = lazy(() => import('src/pages/sign-in'));
 export const ProductsPage = lazy(() => import('src/pages/products'));
 export const Page404 = lazy(() => import('src/pages/page-not-found'));
 export const ClientsPage = lazy(() => import('src/pages/clients'));
+export const ClientNewPage = lazy(() => import('src/pages/client-new'));
+export const ClientEditPage = lazy(() => import('src/pages/client-edit'));
 export const ClientItemsPage = lazy(() => import('src/pages/client-items'));
+export const ClientItemNewPage = lazy(() => import('src/pages/client-item-new'));
 export const ItemTypesPage = lazy(() => import('src/pages/item-types'));
+export const ItemTypeNewPage = lazy(() => import('src/pages/item-type-new'));
+export const ItemTypeEditPage = lazy(() => import('src/pages/item-type-edit'));
 export const CustomersPage = lazy(() => import('src/pages/customers'));
+export const CustomerNewPage = lazy(() => import('src/pages/customer-new'));
+export const CustomerEditPage = lazy(() => import('src/pages/customer-edit'));
 export const ClientHistoryPage = lazy(() => import('src/pages/client-history'));
+export const ClientClientHistoryPage = lazy(() => import('src/pages/client-client-history'));
 
 const renderFallback = () => (
   <Box
@@ -63,9 +71,18 @@ export const routesSection: RouteObject[] = [
       { path: 'products', element: <ProductsPage /> },
       { path: 'blog', element: <BlogPage /> },
       { path: 'clients', element: <ClientsPage /> },
+      { path: 'clients/new', element: <ClientNewPage /> },
+      { path: 'clients/:clientId/edit', element: <ClientEditPage /> },
       { path: 'clients/:clientId/items', element: <ClientItemsPage /> },
+      { path: 'clients/:clientId/history', element: <ClientClientHistoryPage /> },
+      { path: 'clients/:clientId/items/new', element: <ClientItemNewPage /> },
+      { path: 'clients/:clientId/items/:itemId/edit', element: <ClientItemNewPage /> },
       { path: 'item-types', element: <ItemTypesPage /> },
+      { path: 'item-types/new', element: <ItemTypeNewPage /> },
+      { path: 'item-types/:itemTypeId/edit', element: <ItemTypeEditPage /> },
       { path: 'customers', element: <CustomersPage /> },
+      { path: 'customers/new', element: <CustomerNewPage /> },
+      { path: 'customers/:customerId/edit', element: <CustomerEditPage /> },
       { path: 'client-history', element: <ClientHistoryPage /> },
     ],
   },

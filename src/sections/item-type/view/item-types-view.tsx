@@ -1,3 +1,7 @@
+import type { AxiosError } from 'axios';
+
+import { toast } from 'react-toastify';
+import { useNavigate } from 'react-router-dom';
 import { useState, useEffect, useCallback } from 'react';
 
 import Box from '@mui/material/Box';
@@ -17,15 +21,13 @@ import TableContainer from '@mui/material/TableContainer';
 import TableSortLabel from '@mui/material/TableSortLabel';
 import InputAdornment from '@mui/material/InputAdornment';
 import TablePagination from '@mui/material/TablePagination';
-import CircularProgress from '@mui/material/CircularProgress';
 
+import { useAppDispatch } from 'src/redux/hooks';
+import { showAlert } from 'src/redux/slices/alertSlice';
 import { DashboardContent } from 'src/layouts/dashboard';
 import {
-  addItemType,
-  getItemType,
   getItemTypes,
   type ItemType,
-  updateItemType,
   deleteItemType,
 } from 'src/redux/apis/itemTypesApis';
 
@@ -33,7 +35,6 @@ import { Iconify } from 'src/components/iconify';
 import { Scrollbar } from 'src/components/scrollbar';
 
 import { emptyRows } from '../utils';
-import { ItemTypeFormDialog } from '../item-type-form-dialog';
 import { ItemTypeDeleteDialog } from '../item-type-delete-dialog';
 
 // ----------------------------------------------------------------------
@@ -79,18 +80,31 @@ function useTable() {
   };
 }
 
+function getApiMessage(response: { message?: string; data?: unknown }) {
+  if (typeof response?.data === 'string' && response.data.trim()) return response.data;
+  if (typeof response?.message === 'string' && response.message.trim()) return response.message;
+  return '';
+}
+
+function getApiErrorMessage(err: unknown) {
+  const axiosError = err as AxiosError<{ message?: string; data?: string }>;
+  const backendMessage = axiosError?.response?.data?.message || axiosError?.response?.data?.data;
+  if (typeof backendMessage === 'string' && backendMessage.trim()) return backendMessage;
+  if (typeof axiosError?.message === 'string' && axiosError.message.trim()) return axiosError.message;
+  return '';
+}
+
 // ----------------------------------------------------------------------
 
 export function ItemTypesView() {
+  const navigate = useNavigate();
+  const dispatch = useAppDispatch();
   const table = useTable();
   const [items, setItems] = useState<ItemType[]>([]);
   const [totalItems, setTotalItems] = useState(0);
   const [loading, setLoading] = useState(true);
   const [filterName, setFilterName] = useState('');
   const [debouncedFilterName, setDebouncedFilterName] = useState('');
-  const [formOpen, setFormOpen] = useState(false);
-  const [editItem, setEditItem] = useState<ItemType | null>(null);
-  const [editLoading, setEditLoading] = useState<string | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [itemToDelete, setItemToDelete] = useState<ItemType | null>(null);
 
@@ -128,43 +142,14 @@ export function ItemTypesView() {
   const notFound = !loading && !dataFiltered.length && !!filterName;
 
   const handleOpenNew = useCallback(() => {
-    setEditItem(null);
-    setFormOpen(true);
-  }, []);
+    navigate('/item-types/new');
+  }, [navigate]);
 
-  const handleOpenEdit = useCallback(async (row: ItemType) => {
-    setEditLoading(row._id);
-    try {
-      const fresh = await getItemType(row._id);
-      setEditItem(fresh);
-    } catch {
-      setEditItem(row);
-    } finally {
-      setEditLoading(null);
-      setFormOpen(true);
-    }
-  }, []);
-
-  const handleCloseForm = useCallback(() => {
-    setFormOpen(false);
-    setEditItem(null);
-  }, []);
-
-  const handleFormSubmit = useCallback(
-    async (itemType: string) => {
-      try {
-        if (editItem) {
-          await updateItemType(editItem._id, { itemType });
-        } else {
-          await addItemType({ itemType });
-        }
-        await fetchItems();
-        handleCloseForm();
-      } catch (err) {
-        console.error(err);
-      }
+  const handleOpenEdit = useCallback(
+    (row: ItemType) => {
+      navigate(`/item-types/${row._id}/edit`);
     },
-    [editItem, fetchItems, handleCloseForm]
+    [navigate]
   );
 
   const handleOpenDelete = useCallback((row: ItemType) => {
@@ -180,13 +165,23 @@ export function ItemTypesView() {
   const handleConfirmDelete = useCallback(async () => {
     if (!itemToDelete) return;
     try {
-      await deleteItemType(itemToDelete._id);
+      const response = await deleteItemType(itemToDelete._id);
+      const successMessage = getApiMessage(response);
+      if (successMessage) {
+        toast.success(successMessage);
+        dispatch(showAlert({ message: successMessage, severity: 'success' }));
+      }
       await fetchItems();
       handleCloseDelete();
     } catch (err) {
       console.error(err);
+      const errorMessage = getApiErrorMessage(err);
+      if (errorMessage) {
+        toast.error(errorMessage);
+        dispatch(showAlert({ message: errorMessage, severity: 'error' }));
+      }
     }
-  }, [itemToDelete, fetchItems, handleCloseDelete]);
+  }, [dispatch, fetchItems, handleCloseDelete, itemToDelete]);
 
   return (
     <DashboardContent>
@@ -268,18 +263,9 @@ export function ItemTypesView() {
                       <TableCell>{row.itemType}</TableCell>
                       <TableCell align="right">
                         <Tooltip title="Edit">
-                          <span>
-                            <IconButton
-                              onClick={() => handleOpenEdit(row)}
-                              disabled={editLoading === row._id}
-                            >
-                              {editLoading === row._id ? (
-                                <CircularProgress size={20} />
-                              ) : (
-                                <Iconify icon="solar:pen-bold" />
-                              )}
-                            </IconButton>
-                          </span>
+                          <IconButton onClick={() => handleOpenEdit(row)}>
+                            <Iconify icon="solar:pen-bold" />
+                          </IconButton>
                         </Tooltip>
                         <Tooltip title="Delete">
                           <IconButton color="error" onClick={() => handleOpenDelete(row)}>
@@ -315,7 +301,7 @@ export function ItemTypesView() {
 
                 <TableEmptyRows
                   height={68}
-                  emptyCount={emptyRows(table.page, table.rowsPerPage, dataFiltered.length)}
+                  emptyCount={emptyRows(0, table.rowsPerPage, dataFiltered.length)}
                 />
               </TableBody>
             </Table>
@@ -333,16 +319,6 @@ export function ItemTypesView() {
           labelRowsPerPage="Rows per page :"
         />
       </Card>
-
-      <ItemTypeFormDialog
-        open={formOpen}
-        onClose={handleCloseForm}
-        onSubmit={handleFormSubmit}
-        item={editItem}
-        title={editItem ? 'Edit Item Type' : 'New Item Type'}
-        submitLabel={editItem ? 'Update' : 'Create'}
-      />
-
       <ItemTypeDeleteDialog
         open={deleteDialogOpen}
         onClose={handleCloseDelete}

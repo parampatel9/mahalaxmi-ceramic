@@ -28,25 +28,57 @@ export type ClientPayload = {
   totalItem: number;
 };
 
+export type ApiResponse<T> = {
+  status: number;
+  message: string;
+  data: T;
+};
+
+export type ClientMutationResponse = ApiResponse<Client | string | null>;
+
+function normalizeMutationResponse(payload: any): ClientMutationResponse {
+  if (
+    payload &&
+    typeof payload === 'object' &&
+    typeof payload.status === 'number' &&
+    typeof payload.message === 'string' &&
+    'data' in payload
+  ) {
+    return payload as ClientMutationResponse;
+  }
+
+  return {
+    status: typeof payload?.status === 'number' ? payload.status : 200,
+    message: typeof payload?.message === 'string' ? payload.message : '',
+    data: payload?.data ?? payload ?? null,
+  };
+}
+
 export const getClients = async (params?: {
   page?: number;
   limit?: number;
   searchFields?: string;
 }): Promise<ClientResponse> => {
-  const response = await axios.get<ClientResponse>('/clients', {
-    params,
+  const response = await axios.post<ClientResponse>('/clients/list', {
+    searchFields: params?.searchFields ?? '',
+    page: params?.page ?? 1,
+    limit: params?.limit ?? 15,
   });
-  return response.data;
+  const body = response.data;
+  return {
+    data: Array.isArray(body?.data) ? body.data : [],
+    pagination: body?.pagination ?? { total: 0, page: 1, limit: 15, totalPages: 0 },
+  };
 };
 
-export const addClient = async (data: ClientPayload): Promise<Client> => {
-  const response = await axios.post<Client>('/clients', data);
-  return response.data;
+export const addClient = async (data: ClientPayload): Promise<ClientMutationResponse> => {
+  const response = await axios.post('/clients', data);
+  return normalizeMutationResponse(response.data);
 };
 
-export const updateClient = async (id: string, data: ClientPayload): Promise<Client> => {
-  const response = await axios.put<Client>(`/clients/${id}`, data);
-  return response.data;
+export const updateClient = async (id: string, data: ClientPayload): Promise<ClientMutationResponse> => {
+  const response = await axios.put(`/clients/${id}`, data);
+  return normalizeMutationResponse(response.data);
 };
 
 export const getClient = async (id: string): Promise<Client> => {
@@ -54,6 +86,7 @@ export const getClient = async (id: string): Promise<Client> => {
   return response.data;
 };
 
-export const deleteClient = async (id: string): Promise<void> => {
-  await axios.delete(`/clients/${id}`);
+export const deleteClient = async (id: string): Promise<ClientMutationResponse> => {
+  const response = await axios.delete(`/clients/${id}`);
+  return normalizeMutationResponse(response.data);
 };
