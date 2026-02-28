@@ -66,3 +66,94 @@ export const getClientHistoryOne = async (id: string): Promise<ClientHistory> =>
 export const deleteClientHistory = async (id: string): Promise<void> => {
   await axios.delete(`/client-history/${id}`);
 };
+
+// ----------------------------------------------------------------------
+// Day-wise / Month-wise / Ledger
+// ----------------------------------------------------------------------
+
+export type DayWiseEntry = {
+  date: string;
+  totalAmount?: number;
+  totalPrice?: number;
+  count?: number;
+  [key: string]: unknown;
+};
+
+export type MonthWiseEntry = {
+  month: number;
+  year: number;
+  totalAmount?: number;
+  totalPrice?: number;
+  count?: number;
+  [key: string]: unknown;
+};
+
+export const getClientHistoryDayWise = async (
+  clientId: string,
+  params?: { page?: number; limit?: number }
+): Promise<{ data: DayWiseEntry[] }> => {
+  const response = await axios.get<{ data: DayWiseEntry[] }>(
+    `/clients/${clientId}/history/day-wise`,
+    { params }
+  );
+  const body = response.data;
+  return {
+    data: Array.isArray(body?.data) ? body.data : [],
+  };
+};
+
+export const getClientHistoryMonthWise = async (
+  clientId: string,
+  params?: { page?: number; limit?: number }
+): Promise<{ data: MonthWiseEntry[] }> => {
+  const response = await axios.get<{ data: MonthWiseEntry[] }>(
+    `/clients/${clientId}/history/month-wise`,
+    { params }
+  );
+  const body = response.data;
+  return {
+    data: Array.isArray(body?.data) ? body.data : [],
+  };
+};
+
+export type LedgerTransaction = {
+  _id: string;
+  amount: number;
+  type: string;
+  note?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  [key: string]: unknown;
+};
+
+export type ClientLedgerResponse = {
+  totalPurchase: number;
+  totalPaid: number;
+  pendingAmount: number;
+  transactions: LedgerTransaction[];
+};
+
+export const getClientLedger = async (clientId: string): Promise<ClientLedgerResponse> => {
+  const response = await axios.get<ClientLedgerResponse>(`/clients/${clientId}/ledger`);
+  const body = response.data;
+  return {
+    totalPurchase: body?.totalPurchase ?? 0,
+    totalPaid: body?.totalPaid ?? 0,
+    pendingAmount: body?.pendingAmount ?? 0,
+    transactions: Array.isArray(body?.transactions) ? body.transactions : [],
+  };
+};
+
+export type PostTransactionBody = {
+  amount: number;
+  type: string;
+  note?: string;
+};
+
+export const postClientTransaction = async (
+  clientId: string,
+  body: PostTransactionBody
+): Promise<unknown> => {
+  const response = await axios.post(`/clients/${clientId}/transactions`, body);
+  return response.data;
+};
