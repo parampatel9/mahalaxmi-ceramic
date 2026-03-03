@@ -25,11 +25,8 @@ import TablePagination from '@mui/material/TablePagination';
 import { useAppDispatch } from 'src/redux/hooks';
 import { showAlert } from 'src/redux/slices/alertSlice';
 import { DashboardContent } from 'src/layouts/dashboard';
-import {
-  getClients,
-  type Client,
-  deleteClient,
-} from 'src/redux/apis/clientsApis';
+import { type Client } from 'src/redux/apis/clientsApis';
+import { removeClient, fetchClients as fetchClientsThunk } from 'src/redux/slices/clientSlice';
 
 import { Iconify } from 'src/components/iconify';
 import { Scrollbar } from 'src/components/scrollbar';
@@ -118,11 +115,13 @@ export function ClientView() {
   const fetchClients = useCallback(async () => {
     setLoading(true);
     try {
-      const response = await getClients({
+      const response = await dispatch(
+        fetchClientsThunk({
         page: table.page + 1,
         limit: table.rowsPerPage,
         searchFields: debouncedFilterName,
-      });
+        })
+      ).unwrap();
       setClients(Array.isArray(response.data) ? response.data : []);
       setTotalClients(response.pagination?.total || 0);
     } catch {
@@ -131,7 +130,7 @@ export function ClientView() {
     } finally {
       setLoading(false);
     }
-  }, [table.page, table.rowsPerPage, debouncedFilterName]);
+  }, [dispatch, table.page, table.rowsPerPage, debouncedFilterName]);
 
   useEffect(() => {
     fetchClients();
@@ -173,7 +172,7 @@ export function ClientView() {
   const handleConfirmDelete = useCallback(async () => {
     if (!clientToDelete) return;
     try {
-      const response = await deleteClient(clientToDelete._id);
+      const response = await dispatch(removeClient(clientToDelete._id)).unwrap();
       const successMessage = getApiMessage(response);
 
       if (successMessage) {

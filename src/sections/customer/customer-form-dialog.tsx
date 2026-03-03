@@ -4,15 +4,12 @@ import type { Customer, CustomerItemPayload } from 'src/redux/apis/customersApis
 import { useState, useEffect } from 'react';
 
 import Box from '@mui/material/Box';
-import Select from '@mui/material/Select';
 import Dialog from '@mui/material/Dialog';
 import Button from '@mui/material/Button';
-import MenuItem from '@mui/material/MenuItem';
 import TextField from '@mui/material/TextField';
-import InputLabel from '@mui/material/InputLabel';
 import Typography from '@mui/material/Typography';
 import DialogTitle from '@mui/material/DialogTitle';
-import FormControl from '@mui/material/FormControl';
+import Autocomplete from '@mui/material/Autocomplete';
 import DialogContent from '@mui/material/DialogContent';
 import DialogActions from '@mui/material/DialogActions';
 import FormHelperText from '@mui/material/FormHelperText';
@@ -190,22 +187,28 @@ export function CustomerFormDialog({
                 </Button>
               </Box>
 
-              <FormControl fullWidth required error={itemsError && !item.itemNumber}>
-                <InputLabel id={`item-number-label-${index}`}>Item (from client items)</InputLabel>
-                <Select
-                  labelId={`item-number-label-${index}`}
-                  value={item.itemNumber}
-                  label="Item (from client items)"
-                  onChange={(e) => handleItemChange(index, 'itemNumber', e.target.value)}
-                >
-                  {clientItems.map((clientItem) => (
-                    <MenuItem key={clientItem._id} value={clientItem.itemNumber}>
-                      {clientItem.itemNumber}
-                      {typeof clientItem.actualPrice === 'number' ? ` — ₹${clientItem.actualPrice}` : ''}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
+              <Autocomplete
+                options={clientItems}
+                value={clientItems.find((clientItem) => clientItem.itemNumber === item.itemNumber) ?? null}
+                onChange={(_, newValue) => handleItemChange(index, 'itemNumber', newValue?.itemNumber ?? '')}
+                getOptionLabel={(option) => option.itemNumber ?? ''}
+                isOptionEqualToValue={(option, value) => option._id === value._id}
+                renderOption={(props, option) => (
+                  <Box component="li" {...props}>
+                    {option.itemNumber}
+                    {typeof option.actualPrice === 'number' ? ` — ₹${option.actualPrice}` : ''}
+                  </Box>
+                )}
+                renderInput={(params) => (
+                  <TextField
+                    {...params}
+                    label="Item (from client items)"
+                    fullWidth
+                    required
+                    error={itemsError && !item.itemNumber}
+                  />
+                )}
+              />
 
               <TextField
                 label="Box Quantity"

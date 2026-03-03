@@ -25,11 +25,8 @@ import TablePagination from '@mui/material/TablePagination';
 import { useAppDispatch } from 'src/redux/hooks';
 import { showAlert } from 'src/redux/slices/alertSlice';
 import { DashboardContent } from 'src/layouts/dashboard';
-import {
-  getItemTypes,
-  type ItemType,
-  deleteItemType,
-} from 'src/redux/apis/itemTypesApis';
+import { type ItemType } from 'src/redux/apis/itemTypesApis';
+import { removeItemType, fetchItemTypes as fetchItemTypesThunk } from 'src/redux/slices/itemTypeSlice';
 
 import { Iconify } from 'src/components/iconify';
 import { Scrollbar } from 'src/components/scrollbar';
@@ -118,11 +115,13 @@ export function ItemTypesView() {
   const fetchItems = useCallback(async () => {
     setLoading(true);
     try {
-      const response = await getItemTypes({
+      const response = await dispatch(
+        fetchItemTypesThunk({
         page: table.page + 1,
         limit: table.rowsPerPage,
         searchFields: debouncedFilterName,
-      });
+        })
+      ).unwrap();
       setItems(response.data);
       setTotalItems(response.pagination?.total ?? 0);
     } catch {
@@ -131,7 +130,7 @@ export function ItemTypesView() {
     } finally {
       setLoading(false);
     }
-  }, [table.page, table.rowsPerPage, debouncedFilterName]);
+  }, [dispatch, table.page, table.rowsPerPage, debouncedFilterName]);
 
   useEffect(() => {
     fetchItems();
@@ -165,7 +164,7 @@ export function ItemTypesView() {
   const handleConfirmDelete = useCallback(async () => {
     if (!itemToDelete) return;
     try {
-      const response = await deleteItemType(itemToDelete._id);
+      const response = await dispatch(removeItemType(itemToDelete._id)).unwrap();
       const successMessage = getApiMessage(response);
       if (successMessage) {
         toast.success(successMessage);

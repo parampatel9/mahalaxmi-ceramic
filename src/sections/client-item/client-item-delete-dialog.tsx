@@ -32,8 +32,8 @@ export function ClientItemDeleteDialog({
       <DialogTitle>Delete Item</DialogTitle>
       <DialogContent>
         <DialogContentText>
-          Are you sure you want to delete item &quot;{item?.itemNumber}&quot;? This action cannot
-          be undone.
+          Are you sure you want to delete item &quot;{item?.itemNumber}&quot;
+          {item?.oldItemName ? ` (Old: ${item.oldItemName})` : ''}? This action cannot be undone.
         </DialogContentText>
       </DialogContent>
       <DialogActions>

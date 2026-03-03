@@ -5,6 +5,9 @@ import axios from 'axios';
 export type Customer = {
   _id: string;
   customerName: string;
+  address?: string;
+  mobileNumber?: string;
+  date?: string;
   billNumber: number;
   itemNumber?: string;
   boxQuantity?: number;
@@ -30,6 +33,9 @@ export type CustomerResponse = {
 
 export type CustomerPayload = {
   customerName: string;
+  address: string;
+  mobileNumber: string;
+  date: string;
   billNumber: number;
   items: CustomerItemPayload[];
 };

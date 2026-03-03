@@ -10,6 +10,7 @@ export type PopulatedItemType = {
 export type ClientItem = {
   _id: string;
   itemNumber: string;
+  oldItemName?: string;
   actualPrice: number;
   itemTypeId?: string | PopulatedItemType;
   clientId?: string;
@@ -19,6 +20,7 @@ export type ClientItem = {
 
 export type ClientItemPayload = {
   itemNumber: string;
+  oldItemName?: string;
   actualPrice: number;
   itemTypeId: string;
 };

@@ -18,7 +18,7 @@ import CardContent from '@mui/material/CardContent';
 import { useAppDispatch } from 'src/redux/hooks';
 import { showAlert } from 'src/redux/slices/alertSlice';
 import { DashboardContent } from 'src/layouts/dashboard';
-import { addClient, getClient, updateClient } from 'src/redux/apis/clientsApis';
+import { editClient, fetchClient, createClient } from 'src/redux/slices/clientSlice';
 
 // ----------------------------------------------------------------------
 
@@ -58,7 +58,9 @@ export function ClientNewView({ mode, clientId }: ClientFormPageViewProps) {
           totalItem: values.totalItem,
         };
         const response =
-          mode === 'edit' && clientId ? await updateClient(clientId, payload) : await addClient(payload);
+          mode === 'edit' && clientId
+            ? await dispatch(editClient({ id: clientId, data: payload })).unwrap()
+            : await dispatch(createClient(payload)).unwrap();
 
         const successMessage =
           (typeof response.data === 'string' && response.data.trim()) ||
@@ -97,7 +99,7 @@ export function ClientNewView({ mode, clientId }: ClientFormPageViewProps) {
       const loadClient = async () => {
         setLoadingForm(true);
         try {
-          const response = await getClient(clientId);
+          const response = await dispatch(fetchClient(clientId)).unwrap();
           if (mounted) {
             setInitialValues({
               clientName: response.clientName ?? '',
@@ -133,7 +135,7 @@ export function ClientNewView({ mode, clientId }: ClientFormPageViewProps) {
     return () => {
       mounted = false;
     };
-  }, [clientId, mode]);
+  }, [clientId, dispatch, mode]);
 
   if (mode === 'edit' && !clientId) {
     return (

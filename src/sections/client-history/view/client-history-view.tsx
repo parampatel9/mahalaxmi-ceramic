@@ -1,5 +1,8 @@
-import { Link as RouterLink } from 'react-router-dom';
+import type { Dayjs } from 'dayjs';
+
+import dayjs from 'dayjs';
 import { useState, useEffect, useCallback } from 'react';
+import { useNavigate, Link as RouterLink } from 'react-router-dom';
 
 import Box from '@mui/material/Box';
 import Tab from '@mui/material/Tab';
@@ -15,25 +18,32 @@ import TableHead from '@mui/material/TableHead';
 import TableCell from '@mui/material/TableCell';
 import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
+import Autocomplete from '@mui/material/Autocomplete';
 import TableContainer from '@mui/material/TableContainer';
 import InputAdornment from '@mui/material/InputAdornment';
 import TablePagination from '@mui/material/TablePagination';
+import { DatePicker } from '@mui/x-date-pickers/DatePicker';
+import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
+import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 
-import { getClient } from 'src/redux/apis/clientsApis';
+import { useAppDispatch } from 'src/redux/hooks';
 import { DashboardContent } from 'src/layouts/dashboard';
+import { fetchClient as fetchClientById } from 'src/redux/slices/clientSlice';
 import {
-  getClientHistory,
-  type ClientHistory,
-  getClientHistoryByClient,
-  getClientHistoryDayWise,
-  getClientHistoryMonthWise,
-  getClientLedger,
-  postClientTransaction,
   type DayWiseEntry,
+  type ClientHistory,
   type MonthWiseEntry,
-  type ClientLedgerResponse,
   type LedgerTransaction,
+  type ClientLedgerResponse,
 } from 'src/redux/apis/clientHistoryApis';
+import {
+  fetchClientLedger,
+  fetchClientHistory,
+  createClientTransaction,
+  fetchClientHistoryDayWise,
+  fetchClientHistoryByClient,
+  fetchClientHistoryMonthWise,
+} from 'src/redux/slices/clientHistorySlice';
 
 import { Iconify } from 'src/components/iconify';
 import { Scrollbar } from 'src/components/scrollbar';
@@ -46,7 +56,22 @@ type ClientHistoryViewProps = {
 
 type SubTabValue = 'history' | 'daywise' | 'monthwise' | 'ledger';
 
+const PAYMENT_MODE_OPTIONS = [
+  'Cash',
+  'Online',
+  'UPI',
+  'Bank Transfer',
+  'Card',
+  'Cheque',
+  'NEFT',
+  'RTGS',
+  'IMPS',
+  'Wallet',
+] as const;
+
 export function ClientHistoryView({ clientId }: ClientHistoryViewProps) {
+  const dispatch = useAppDispatch();
+  const navigate = useNavigate();
   const [subTab, setSubTab] = useState<SubTabValue>('history');
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(15);
@@ -67,6 +92,8 @@ export function ClientHistoryView({ clientId }: ClientHistoryViewProps) {
   const [ledgerLoading, setLedgerLoading] = useState(false);
 
   const [paymentAmount, setPaymentAmount] = useState('');
+  const [paymentMode, setPaymentMode] = useState<string>(PAYMENT_MODE_OPTIONS[0]);
+  const [paymentDate, setPaymentDate] = useState<Dayjs | null>(dayjs());
   const [paymentNote, setPaymentNote] = useState('');
   const [paymentSubmitting, setPaymentSubmitting] = useState(false);
 
@@ -79,15 +106,22 @@ export function ClientHistoryView({ clientId }: ClientHistoryViewProps) {
     setLoading(true);
     try {
       const res = clientId
-        ? await getClientHistoryByClient(clientId, {
-            page: page + 1,
-            limit: rowsPerPage,
-            search: debouncedSearch || undefined,
-          })
-        : await getClientHistory({
-            billNumber: appliedBillNumber,
-            limit: 500,
-          });
+        ? await dispatch(
+            fetchClientHistoryByClient({
+              clientId,
+              params: {
+                page: page + 1,
+                limit: rowsPerPage,
+                search: debouncedSearch || undefined,
+              },
+            })
+          ).unwrap()
+        : await dispatch(
+            fetchClientHistory({
+              billNumber: appliedBillNumber,
+              limit: 500,
+            })
+          ).unwrap();
       setHistory(res.data);
       setTotalHistory(res.pagination?.total ?? 0);
     } catch {
@@ -96,56 +130,56 @@ export function ClientHistoryView({ clientId }: ClientHistoryViewProps) {
     } finally {
       setLoading(false);
     }
-  }, [appliedBillNumber, clientId, debouncedSearch, page, rowsPerPage]);
+  }, [appliedBillNumber, clientId, debouncedSearch, dispatch, page, rowsPerPage]);
 
   const fetchClient = useCallback(async () => {
     if (!clientId) return;
     try {
-      const response = await getClient(clientId);
+      const response = await dispatch(fetchClientById(clientId)).unwrap();
       setClientName(response.clientName);
     } catch {
       setClientName('');
     }
-  }, [clientId]);
+  }, [clientId, dispatch]);
 
   const fetchDayWise = useCallback(async () => {
     if (!clientId) return;
     setDayWiseLoading(true);
     try {
-      const res = await getClientHistoryDayWise(clientId);
-      setDayWiseData(res.data);
+      const data = await dispatch(fetchClientHistoryDayWise({ clientId })).unwrap();
+      setDayWiseData(data);
     } catch {
       setDayWiseData([]);
     } finally {
       setDayWiseLoading(false);
     }
-  }, [clientId]);
+  }, [clientId, dispatch]);
 
   const fetchMonthWise = useCallback(async () => {
     if (!clientId) return;
     setMonthWiseLoading(true);
     try {
-      const res = await getClientHistoryMonthWise(clientId);
-      setMonthWiseData(res.data);
+      const data = await dispatch(fetchClientHistoryMonthWise({ clientId })).unwrap();
+      setMonthWiseData(data);
     } catch {
       setMonthWiseData([]);
     } finally {
       setMonthWiseLoading(false);
     }
-  }, [clientId]);
+  }, [clientId, dispatch]);
 
   const fetchLedger = useCallback(async () => {
     if (!clientId) return;
     setLedgerLoading(true);
     try {
-      const res = await getClientLedger(clientId);
+      const res = await dispatch(fetchClientLedger(clientId)).unwrap();
       setLedger(res);
     } catch {
       setLedger(null);
     } finally {
       setLedgerLoading(false);
     }
-  }, [clientId]);
+  }, [clientId, dispatch]);
 
   useEffect(() => {
     fetchHistory();
@@ -188,20 +222,30 @@ export function ClientHistoryView({ clientId }: ClientHistoryViewProps) {
     if (!clientId) return;
     const amount = Number(paymentAmount);
     if (Number.isNaN(amount) || amount <= 0) return;
+    if (!paymentMode.trim() || !paymentDate?.isValid()) return;
     setPaymentSubmitting(true);
     try {
-      await postClientTransaction(clientId, {
-        amount,
-        type: 'payment',
-        note: paymentNote.trim() || undefined,
-      });
+      await dispatch(
+        createClientTransaction({
+          clientId,
+          body: {
+            amount,
+            type: 'payment',
+            paymentMode,
+            date: paymentDate.format('YYYY-MM-DD'),
+            note: paymentNote.trim() || undefined,
+          },
+        })
+      ).unwrap();
       setPaymentAmount('');
+      setPaymentMode(PAYMENT_MODE_OPTIONS[0]);
+      setPaymentDate(dayjs());
       setPaymentNote('');
       await fetchLedger();
     } finally {
       setPaymentSubmitting(false);
     }
-  }, [clientId, paymentAmount, paymentNote, fetchLedger]);
+  }, [clientId, dispatch, fetchLedger, paymentAmount, paymentDate, paymentMode, paymentNote]);
 
   const totalClientCost = history.reduce((sum, row) => sum + (row.totalPrice ?? 0), 0);
 
@@ -219,6 +263,12 @@ export function ClientHistoryView({ clientId }: ClientHistoryViewProps) {
     } catch {
       return `${month}/${year}`;
     }
+  };
+
+  const getDayBillCount = (row: DayWiseEntry): number => {
+    if (typeof row.billCount === 'number') return row.billCount;
+    if (typeof row.count === 'number') return row.count;
+    return 0;
   };
 
   return (
@@ -360,7 +410,12 @@ export function ClientHistoryView({ clientId }: ClientHistoryViewProps) {
                       history.map((row) => (
                         <TableRow hover key={row._id}>
                           <TableCell>{row.billNumber}</TableCell>
-                          <TableCell>{row.itemNumber}</TableCell>
+                          <TableCell>
+                            <Typography variant="body2">{row.itemNumber}</Typography>
+                            <Typography variant="caption" color="text.secondary">
+                              Old: {row.oldItemName || '—'}
+                            </Typography>
+                          </TableCell>
                           <TableCell align="right">{row.boxQuantity}</TableCell>
                           <TableCell align="right">₹{row.totalPrice}</TableCell>
                         </TableRow>
@@ -441,11 +496,30 @@ export function ClientHistoryView({ clientId }: ClientHistoryViewProps) {
                     ) : (
                       dayWiseData.map((row, idx) => (
                         <TableRow hover key={row.date ?? idx}>
-                          <TableCell>{formatDate(row.date)}</TableCell>
+                          <TableCell>
+                            {getDayBillCount(row) > 0 && clientId ? (
+                              <Button
+                                variant="text"
+                                size="small"
+                                sx={{ px: 0, minWidth: 0 }}
+                                onClick={() =>
+                                  navigate(
+                                    `/day-bills?date=${encodeURIComponent(dayjs(row.date).format('YYYY-MM-DD'))}&clientId=${encodeURIComponent(clientId)}`
+                                  )
+                                }
+                              >
+                                {formatDate(row.date)}
+                              </Button>
+                            ) : (
+                              formatDate(row.date)
+                            )}
+                          </TableCell>
                           <TableCell align="right">
                             ₹{(row.totalAmount ?? row.totalPrice ?? 0).toFixed(2)}
                           </TableCell>
-                          <TableCell align="right">{row.count ?? '—'}</TableCell>
+                          <TableCell align="right">
+                            {getDayBillCount(row) > 0 ? getDayBillCount(row) : '—'}
+                          </TableCell>
                         </TableRow>
                       ))
                     )}
@@ -535,17 +609,48 @@ export function ClientHistoryView({ clientId }: ClientHistoryViewProps) {
                 inputProps={{ min: 0 }}
                 sx={{ width: 140 }}
               />
-              <TextField
+              <Autocomplete
+                options={[...PAYMENT_MODE_OPTIONS]}
+                value={paymentMode}
+                onChange={(_e, newValue) => setPaymentMode(newValue ?? '')}
+                sx={{ width: 200 }}
+                renderInput={(params) => (
+                  <TextField {...params} size="small" label="Payment Mode" required />
+                )}
+              />
+              <LocalizationProvider dateAdapter={AdapterDayjs}>
+                <DatePicker
+                  label="Payment Date"
+                  value={paymentDate}
+                  onChange={(newValue) => setPaymentDate(newValue)}
+                  format="DD/MM/YYYY"
+                  disableFuture
+                  slotProps={{
+                    textField: {
+                      size: 'small',
+                      required: true,
+                      sx: { width: 180 },
+                    },
+                  }}
+                />
+              </LocalizationProvider>
+              {/* <TextField
                 value={paymentNote}
                 onChange={(e) => setPaymentNote(e.target.value)}
                 placeholder="Note (e.g. Cash paid)"
                 size="small"
                 sx={{ width: 200 }}
-              />
+              /> */}
               <Button
                 variant="contained"
                 onClick={handleRecordPayment}
-                disabled={paymentSubmitting || !paymentAmount || Number(paymentAmount) <= 0}
+                disabled={
+                  paymentSubmitting ||
+                  !paymentAmount ||
+                  Number(paymentAmount) <= 0 ||
+                  !paymentMode ||
+                  !paymentDate?.isValid()
+                }
               >
                 {paymentSubmitting ? 'Saving...' : 'Record payment'}
               </Button>
@@ -593,8 +698,8 @@ export function ClientHistoryView({ clientId }: ClientHistoryViewProps) {
                       <TableHead>
                         <TableRow>
                           <TableCell>Date</TableCell>
-                          <TableCell>Type</TableCell>
-                          <TableCell>Note</TableCell>
+                          {/* <TableCell>Type</TableCell> */}
+                          <TableCell>Payment Type</TableCell>
                           <TableCell align="right">Amount</TableCell>
                         </TableRow>
                       </TableHead>
@@ -610,9 +715,9 @@ export function ClientHistoryView({ clientId }: ClientHistoryViewProps) {
                         ) : (
                           ledger.transactions.map((tx: LedgerTransaction) => (
                             <TableRow hover key={tx._id}>
-                              <TableCell>{tx.createdAt ? formatDate(tx.createdAt) : '—'}</TableCell>
-                              <TableCell>{tx.type || '—'}</TableCell>
-                              <TableCell>{tx.note || '—'}</TableCell>
+                              <TableCell>{tx.date ? formatDate(tx.date) : tx.createdAt ? formatDate(tx.createdAt) : '—'}</TableCell>
+                              {/* <TableCell>{tx.type || '—'}</TableCell> */}
+                              <TableCell>{tx.paymentMode}</TableCell>
                               <TableCell align="right">₹{tx.amount.toFixed(2)}</TableCell>
                             </TableRow>
                           ))

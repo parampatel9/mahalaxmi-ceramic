@@ -6,6 +6,7 @@ export type ClientHistory = {
   _id: string;
   billNumber: number;
   itemNumber: string;
+  oldItemName?: string;
   boxQuantity: number;
   actualPrice: number;
   totalPrice: number;
@@ -46,6 +47,7 @@ export const getClientHistoryByClient = async (
     page?: number;
     limit?: number;
     search?: string;
+    date?: string;
   }
 ): Promise<ClientHistoryResponse> => {
   const response = await axios.get<ClientHistoryResponse>(`/clients/${clientId}/history`, {
@@ -73,10 +75,48 @@ export const deleteClientHistory = async (id: string): Promise<void> => {
 
 export type DayWiseEntry = {
   date: string;
+  billCount?: number;
   totalAmount?: number;
   totalPrice?: number;
   count?: number;
   [key: string]: unknown;
+};
+
+export type DayBillItem = {
+  itemNumber: string;
+  price?: number;
+};
+
+export type DayBill = {
+  billNumber: number;
+  billTotal: number;
+  items: DayBillItem[];
+};
+
+export type DayBillsResponse = {
+  date: string;
+  totalBills: number;
+  grandTotal: number;
+  bills: DayBill[];
+};
+
+export const getClientDayBills = async (date: string): Promise<DayBillsResponse> => {
+  const response = await axios.get<DayBillsResponse | { data?: DayBillsResponse }>('/bills/by-date', {
+    params: { date },
+  });
+  const raw = response.data as DayBillsResponse & { data?: DayBillsResponse };
+  const body = raw?.data && typeof raw.data === 'object' ? raw.data : raw;
+  return {
+    date: body?.date ?? date,
+    totalBills: typeof body?.totalBills === 'number' ? body.totalBills : Array.isArray(body?.bills) ? body.bills.length : 0,
+    grandTotal:
+      typeof body?.grandTotal === 'number'
+        ? body.grandTotal
+        : Array.isArray(body?.bills)
+          ? body.bills.reduce((sum, bill) => sum + (Number(bill.billTotal) || 0), 0)
+          : 0,
+    bills: Array.isArray(body?.bills) ? body.bills : [],
+  };
 };
 
 export type MonthWiseEntry = {
@@ -120,6 +160,8 @@ export type LedgerTransaction = {
   _id: string;
   amount: number;
   type: string;
+  paymentMode?: string;
+  date?: string;
   note?: string;
   createdAt?: string;
   updatedAt?: string;
@@ -147,6 +189,8 @@ export const getClientLedger = async (clientId: string): Promise<ClientLedgerRes
 export type PostTransactionBody = {
   amount: number;
   type: string;
+  paymentMode?: string;
+  date?: string;
   note?: string;
 };
 

@@ -18,7 +18,7 @@ import CardContent from '@mui/material/CardContent';
 import { useAppDispatch } from 'src/redux/hooks';
 import { showAlert } from 'src/redux/slices/alertSlice';
 import { DashboardContent } from 'src/layouts/dashboard';
-import { addItemType, getItemType, updateItemType } from 'src/redux/apis/itemTypesApis';
+import { editItemType, fetchItemType, createItemType } from 'src/redux/slices/itemTypeSlice';
 
 
 // ----------------------------------------------------------------------
@@ -53,8 +53,8 @@ export function ItemTypeNewView({ mode, itemTypeId }: ItemTypeFormPageViewProps)
         const value = values.itemType.trim();
         const response =
           mode === 'edit' && itemTypeId
-            ? await updateItemType(itemTypeId, { itemType: value })
-            : await addItemType({ itemType: value });
+            ? await dispatch(editItemType({ id: itemTypeId, data: { itemType: value } })).unwrap()
+            : await dispatch(createItemType({ itemType: value })).unwrap();
         const successMessage =
           (typeof response.data === 'string' && response.data.trim()) ||
           (typeof response.message === 'string' && response.message.trim()) ||
@@ -90,7 +90,7 @@ export function ItemTypeNewView({ mode, itemTypeId }: ItemTypeFormPageViewProps)
       const loadItemType = async () => {
         setLoadingForm(true);
         try {
-          const response = await getItemType(itemTypeId);
+          const response = await dispatch(fetchItemType(itemTypeId)).unwrap();
           if (mounted) {
             setInitialValues({ itemType: response.itemType ?? '' });
           }
@@ -122,7 +122,7 @@ export function ItemTypeNewView({ mode, itemTypeId }: ItemTypeFormPageViewProps)
     return () => {
       mounted = false;
     };
-  }, [itemTypeId, mode]);
+  }, [dispatch, itemTypeId, mode]);
 
   if (mode === 'edit' && !itemTypeId) {
     return (

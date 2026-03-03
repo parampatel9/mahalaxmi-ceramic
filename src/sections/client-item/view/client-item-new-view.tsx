@@ -12,26 +12,19 @@ import Link from '@mui/material/Link';
 import Stack from '@mui/material/Stack';
 import Alert from '@mui/material/Alert';
 import Button from '@mui/material/Button';
-import Select from '@mui/material/Select';
-import MenuItem from '@mui/material/MenuItem';
 import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
-import InputLabel from '@mui/material/InputLabel';
-import FormControl from '@mui/material/FormControl';
 import CardContent from '@mui/material/CardContent';
-import FormHelperText from '@mui/material/FormHelperText';
+import Autocomplete from '@mui/material/Autocomplete';
 
 import { useAppDispatch } from 'src/redux/hooks';
-import { getClient } from 'src/redux/apis/clientsApis';
 import { showAlert } from 'src/redux/slices/alertSlice';
 import { DashboardContent } from 'src/layouts/dashboard';
-import { getItemTypes, type ItemType } from 'src/redux/apis/itemTypesApis';
-import {
-  addClientItem,
-  getClientItem,
-  type ClientItem,
-  updateClientItem,
-} from 'src/redux/apis/clientItemsApis';
+import { fetchClient } from 'src/redux/slices/clientSlice';
+import { type ItemType } from 'src/redux/apis/itemTypesApis';
+import { fetchItemTypes } from 'src/redux/slices/itemTypeSlice';
+import { type ClientItem } from 'src/redux/apis/clientItemsApis';
+import { editClientItem, fetchClientItem, createClientItem } from 'src/redux/slices/clientItemSlice';
 
 import { Iconify } from 'src/components/iconify';
 
@@ -44,6 +37,7 @@ type ClientItemNewViewProps = {
 
 type FormValues = {
   itemNumber: string;
+  oldItemName: string;
   actualPrice: string;
   itemTypeId: string;
 };
@@ -62,6 +56,7 @@ export function ClientItemNewView({ clientId, itemId }: ClientItemNewViewProps) 
   const [itemTypes, setItemTypes] = useState<ItemType[]>([]);
   const [initialValues, setInitialValues] = useState<FormValues>({
     itemNumber: '',
+    oldItemName: '',
     actualPrice: '',
     itemTypeId: '',
   });
@@ -98,13 +93,14 @@ export function ClientItemNewView({ clientId, itemId }: ClientItemNewViewProps) 
       try {
         const payload = {
           itemNumber: values.itemNumber.trim(),
+          oldItemName: values.oldItemName.trim() || undefined,
           actualPrice: parsedActualPrice,
           itemTypeId: values.itemTypeId,
         };
         const response =
           isEditMode && itemId
-            ? await updateClientItem(clientId, itemId, payload)
-            : await addClientItem(clientId, payload);
+            ? await dispatch(editClientItem({ clientId, itemId, data: payload })).unwrap()
+            : await dispatch(createClientItem({ clientId, data: payload })).unwrap();
         const successMessage =
           (typeof response.data === 'string' && response.data.trim()) ||
           (typeof response.message === 'string' && response.message.trim()) ||
@@ -139,26 +135,28 @@ export function ClientItemNewView({ clientId, itemId }: ClientItemNewViewProps) 
     try {
       if (isEditMode && itemId) {
         const [clientRes, itemTypesRes, itemRes] = await Promise.all([
-          getClient(clientId),
-          getItemTypes({ limit: 1000 }),
-          getClientItem(clientId, itemId),
+          dispatch(fetchClient(clientId)).unwrap(),
+          dispatch(fetchItemTypes({ limit: 1000 })).unwrap(),
+          dispatch(fetchClientItem({ clientId, itemId })).unwrap(),
         ]);
         setClientName(clientRes.clientName);
         setItemTypes(itemTypesRes.data);
         setInitialValues({
           itemNumber: itemRes.itemNumber ?? '',
+          oldItemName: itemRes.oldItemName ?? '',
           actualPrice: String(itemRes.actualPrice ?? 0),
           itemTypeId: getItemTypeId(itemRes),
         });
       } else {
         const [clientRes, itemTypesRes] = await Promise.all([
-          getClient(clientId),
-          getItemTypes({ limit: 1000 }),
+          dispatch(fetchClient(clientId)).unwrap(),
+          dispatch(fetchItemTypes({ limit: 1000 })).unwrap(),
         ]);
         setClientName(clientRes.clientName);
         setItemTypes(itemTypesRes.data);
         setInitialValues({
           itemNumber: '',
+          oldItemName: '',
           actualPrice: '',
           itemTypeId: '',
         });
@@ -169,7 +167,7 @@ export function ClientItemNewView({ clientId, itemId }: ClientItemNewViewProps) 
     } finally {
       setLoadingForm(false);
     }
-  }, [clientId, isEditMode, itemId]);
+  }, [clientId, dispatch, isEditMode, itemId]);
 
   useEffect(() => {
     fetchFormData();
@@ -222,6 +220,16 @@ export function ClientItemNewView({ clientId, itemId }: ClientItemNewViewProps) 
               />
 
               <TextField
+                name="oldItemName"
+                label="Old Item Name"
+                value={formik.values.oldItemName}
+                onChange={formik.handleChange}
+                onBlur={formik.handleBlur}
+                fullWidth
+                disabled={loadingForm || formik.isSubmitting}
+              />
+
+              <TextField
                 name="actualPrice"
                 label="Actual Price"
                 type="number"
@@ -235,30 +243,29 @@ export function ClientItemNewView({ clientId, itemId }: ClientItemNewViewProps) 
                 disabled={loadingForm || formik.isSubmitting}
               />
 
-              <FormControl
-                fullWidth
-                error={formik.touched.itemTypeId && Boolean(formik.errors.itemTypeId)}
+              <Autocomplete
+                options={itemTypes}
+                value={itemTypes.find((it) => it._id === formik.values.itemTypeId) ?? null}
+                onChange={(_, newValue) => {
+                  formik.setFieldValue('itemTypeId', newValue?._id ?? '');
+                }}
+                onBlur={() => {
+                  formik.setFieldTouched('itemTypeId', true, true);
+                }}
+                getOptionLabel={(option) => option.itemType ?? ''}
+                isOptionEqualToValue={(option, value) => option._id === value._id}
                 disabled={loadingForm || formik.isSubmitting}
-              >
-                <InputLabel id="new-item-type-label">Item Type</InputLabel>
-                <Select
-                  name="itemTypeId"
-                  labelId="new-item-type-label"
-                  value={formik.values.itemTypeId}
-                  label="Item Type"
-                  onChange={formik.handleChange}
-                  onBlur={formik.handleBlur}
-                >
-                  {itemTypes.map((it) => (
-                    <MenuItem key={it._id} value={it._id}>
-                      {it.itemType}
-                    </MenuItem>
-                  ))}
-                </Select>
-                {formik.touched.itemTypeId && formik.errors.itemTypeId && (
-                  <FormHelperText>{formik.errors.itemTypeId}</FormHelperText>
+                renderInput={(params) => (
+                  <TextField
+                    {...params}
+                    name="itemTypeId"
+                    label="Item Type"
+                    fullWidth
+                    error={formik.touched.itemTypeId && Boolean(formik.errors.itemTypeId)}
+                    helperText={formik.touched.itemTypeId ? formik.errors.itemTypeId : ''}
+                  />
                 )}
-              </FormControl>
+              />
 
               <Stack direction="row" spacing={1.5}>
                 <Button
