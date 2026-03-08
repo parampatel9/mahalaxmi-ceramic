@@ -43,7 +43,7 @@ export function DayBillsView() {
       setLoading(true);
       setError('');
       try {
-        const response = await getClientDayBills(date);
+        const response = await getClientDayBills(date, clientId);
         setDayBills(response);
       } catch {
         setError('Failed to load day bills.');

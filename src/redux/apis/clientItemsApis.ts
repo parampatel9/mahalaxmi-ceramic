@@ -32,6 +32,18 @@ export type ApiResponse<T> = {
 };
 
 export type ClientItemMutationResponse = ApiResponse<ClientItem | string | null>;
+export type ClientItemImportError = {
+  row: number;
+  field: string;
+  message: string;
+};
+
+export type ClientItemImportResponse = {
+  success: boolean;
+  message: string;
+  count: number;
+  errors: ClientItemImportError[];
+};
 
 function normalizeMutationResponse(payload: any): ClientItemMutationResponse {
   if (
@@ -117,18 +129,41 @@ export const deleteClientItem = async (
 };
 
 // All client items (for customer/sale form itemNumber dropdown)
-export const getAllClientItems = async (params?: {
-  page?: number;
-  limit?: number;
-  search?: string;
-}): Promise<ClientItemResponse> => {
-  const res = await axios.get<ClientItemResponse>('/client-items', {
-    params: { page: 1, limit: 500, ...params },
-  });
+export const getAllClientItems = async (): Promise<ClientItemResponse> => {
+  const res = await axios.get<ClientItemResponse>('/client-items');
   const body = res.data;
   return {
     data: Array.isArray(body?.data) ? body.data : [],
     pagination:
       body?.pagination ?? { total: 0, page: 1, limit: 500, totalPages: 0 },
+  };
+};
+
+export const importClientItems = async (
+  clientId: string,
+  file: File
+): Promise<ClientItemImportResponse> => {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const response = await axios.post(`/clients/${clientId}/items/import`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+
+  const body = response.data as Partial<ClientItemImportResponse> & {
+    errors?: Array<Partial<ClientItemImportError>>;
+  };
+
+  return {
+    success: Boolean(body?.success),
+    message: typeof body?.message === 'string' ? body.message : '',
+    count: typeof body?.count === 'number' ? body.count : 0,
+    errors: Array.isArray(body?.errors)
+      ? body.errors.map((err) => ({
+        row: typeof err?.row === 'number' ? err.row : 0,
+        field: typeof err?.field === 'string' ? err.field : '',
+        message: typeof err?.message === 'string' ? err.message : '',
+      }))
+      : [],
   };
 };

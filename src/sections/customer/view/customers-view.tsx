@@ -6,7 +6,9 @@ import { useState, useEffect, useCallback } from 'react';
 
 import Box from '@mui/material/Box';
 import Card from '@mui/material/Card';
+import Chip from '@mui/material/Chip';
 import Table from '@mui/material/Table';
+import Dialog from '@mui/material/Dialog';
 import Button from '@mui/material/Button';
 import Tooltip from '@mui/material/Tooltip';
 import Toolbar from '@mui/material/Toolbar';
@@ -17,10 +19,15 @@ import TableCell from '@mui/material/TableCell';
 import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
 import IconButton from '@mui/material/IconButton';
+import DialogTitle from '@mui/material/DialogTitle';
+import DialogContent from '@mui/material/DialogContent';
+import DialogActions from '@mui/material/DialogActions';
 import TableContainer from '@mui/material/TableContainer';
 import TableSortLabel from '@mui/material/TableSortLabel';
 import InputAdornment from '@mui/material/InputAdornment';
 import TablePagination from '@mui/material/TablePagination';
+
+import { printPdfFromUrl } from 'src/utils/printPdf';
 
 import { useAppDispatch } from 'src/redux/hooks';
 import { showAlert } from 'src/redux/slices/alertSlice';
@@ -29,6 +36,7 @@ import {
   getCustomers,
   type Customer,
   deleteCustomer,
+  addCustomerPayment,
 } from 'src/redux/apis/customersApis';
 
 import { Iconify } from 'src/components/iconify';
@@ -39,10 +47,43 @@ import { CustomerDeleteDialog } from '../customer-delete-dialog';
 
 // ----------------------------------------------------------------------
 
+const CUSTOMERS_TABLE_STATE_KEY = 'customers_table_state';
+
+type StoredCustomersTableState = {
+  page: number;
+  limit: number;
+  search: string;
+};
+
+function readStoredTableState(): StoredCustomersTableState {
+  const fallback: StoredCustomersTableState = { page: 0, limit: 50, search: '' };
+  if (typeof window === 'undefined') return fallback;
+  const raw = window.localStorage.getItem(CUSTOMERS_TABLE_STATE_KEY);
+  if (!raw) return fallback;
+
+  try {
+    const parsed = JSON.parse(raw) as Partial<StoredCustomersTableState>;
+    const page = typeof parsed.page === 'number' && parsed.page >= 0 ? parsed.page : fallback.page;
+    const limit =
+      typeof parsed.limit === 'number' && [50, 100, 150, 200].includes(parsed.limit)
+        ? parsed.limit
+        : fallback.limit;
+    const search = typeof parsed.search === 'string' ? parsed.search : fallback.search;
+    return { page, limit, search };
+  } catch {
+    return fallback;
+  }
+}
+
+function writeStoredTableState(state: StoredCustomersTableState) {
+  if (typeof window === 'undefined') return;
+  window.localStorage.setItem(CUSTOMERS_TABLE_STATE_KEY, JSON.stringify(state));
+}
+
 function useTable() {
-  const [page, setPage] = useState(0);
+  const [page, setPage] = useState(() => readStoredTableState().page);
   const [orderBy, setOrderBy] = useState('createdAt');
-  const [rowsPerPage, setRowsPerPage] = useState(15);
+  const [rowsPerPage, setRowsPerPage] = useState(() => readStoredTableState().limit);
   const [order, setOrder] = useState<'asc' | 'desc'>('desc');
 
   const onSort = useCallback(
@@ -95,6 +136,27 @@ function getApiErrorMessage(err: unknown) {
   return '';
 }
 
+function getRowGrandTotal(row: Customer) {
+  const grandTotal = Number(row.grandTotal ?? row.items?.[0]?.grandTotal ?? 0);
+  return Number.isFinite(grandTotal) ? grandTotal : 0;
+}
+
+function getRowPaidAmount(row: Customer) {
+  const paidAmount = Number(row.paidAmount ?? 0);
+  return Number.isFinite(paidAmount) ? paidAmount : 0;
+}
+
+function getRowUnpaidAmount(row: Customer | null) {
+  const unpaidAmount = Number(row?.unpaidAmount ?? 0);
+  if (!Number.isFinite(unpaidAmount)) return 0;
+  return Math.max(unpaidAmount, 0);
+}
+
+function getRowPaymentStatus(row: Customer): 'paid' | 'unpaid' {
+  if (row.paymentStatus === 'paid' || row.paymentStatus === 'unpaid') return row.paymentStatus;
+  return getRowUnpaidAmount(row) > 0 ? 'unpaid' : 'paid';
+}
+
 // ----------------------------------------------------------------------
 
 export function CustomersView() {
@@ -104,12 +166,16 @@ export function CustomersView() {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [totalCustomers, setTotalCustomers] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [filterName, setFilterName] = useState('');
-  const [debouncedFilterName, setDebouncedFilterName] = useState('');
-  const [filterBillNumber, setFilterBillNumber] = useState('');
-  const [debouncedFilterBillNumber, setDebouncedFilterBillNumber] = useState('');
+  const [filterName, setFilterName] = useState(() => readStoredTableState().search);
+  const [debouncedFilterName, setDebouncedFilterName] = useState(() => readStoredTableState().search);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [customerToDelete, setCustomerToDelete] = useState<Customer | null>(null);
+
+  const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
+  const [paymentCustomer, setPaymentCustomer] = useState<Customer | null>(null);
+  const [paymentAmount, setPaymentAmount] = useState('');
+  const [paymentError, setPaymentError] = useState('');
+  const [submittingPayment, setSubmittingPayment] = useState(false);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -119,30 +185,21 @@ export function CustomersView() {
   }, [filterName]);
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedFilterBillNumber(filterBillNumber);
-    }, 500);
-    return () => clearTimeout(timer);
-  }, [filterBillNumber]);
+    writeStoredTableState({
+      page: table.page,
+      limit: table.rowsPerPage,
+      search: filterName,
+    });
+  }, [filterName, table.page, table.rowsPerPage]);
 
   const fetchCustomers = useCallback(async () => {
     setLoading(true);
     try {
-      const searchFields = [debouncedFilterName, debouncedFilterBillNumber]
-        .filter(Boolean)
-        .join(' ')
-        .trim();
-      const sortParam = table.order === 'desc' ? `-${table.orderBy}` : table.orderBy;
-      let parsedBillNumber: number | undefined;
-      if (debouncedFilterBillNumber.length > 0) {
-        const parsed = parseInt(debouncedFilterBillNumber, 10);
-        if (!Number.isNaN(parsed)) parsedBillNumber = parsed;
-      }
+      const searchFields = debouncedFilterName.trim();
       const response = await getCustomers({
         page: table.page + 1,
         limit: table.rowsPerPage,
         searchFields,
-        billNumber: parsedBillNumber,
       });
       setCustomers(response.data);
       setTotalCustomers(response.pagination?.total ?? 0);
@@ -152,21 +209,14 @@ export function CustomersView() {
     } finally {
       setLoading(false);
     }
-  }, [
-    table.page,
-    table.rowsPerPage,
-    table.order,
-    table.orderBy,
-    debouncedFilterName,
-    debouncedFilterBillNumber,
-  ]);
+  }, [table.page, table.rowsPerPage, debouncedFilterName]);
 
   useEffect(() => {
     fetchCustomers();
   }, [fetchCustomers]);
 
   const dataFiltered = customers;
-  const notFound = !loading && !dataFiltered.length && (!!filterName || !!filterBillNumber);
+  const notFound = !loading && !dataFiltered.length && !!filterName;
 
   const handleOpenNew = useCallback(() => {
     navigate('/customers/new');
@@ -189,6 +239,21 @@ export function CustomersView() {
     setCustomerToDelete(null);
   }, []);
 
+  const handleOpenPayment = useCallback((row: Customer) => {
+    setPaymentCustomer(row);
+    setPaymentAmount('');
+    setPaymentError('');
+    setPaymentDialogOpen(true);
+  }, []);
+
+  const handleClosePayment = useCallback(() => {
+    if (submittingPayment) return;
+    setPaymentDialogOpen(false);
+    setPaymentCustomer(null);
+    setPaymentAmount('');
+    setPaymentError('');
+  }, [submittingPayment]);
+
   const handleConfirmDelete = useCallback(async () => {
     if (!customerToDelete) return;
     try {
@@ -201,7 +266,6 @@ export function CustomersView() {
       await fetchCustomers();
       handleCloseDelete();
     } catch (err) {
-      console.error(err);
       const errorMessage = getApiErrorMessage(err);
       if (errorMessage) {
         toast.error(errorMessage);
@@ -209,6 +273,50 @@ export function CustomersView() {
       }
     }
   }, [customerToDelete, dispatch, fetchCustomers, handleCloseDelete]);
+
+  const handlePrintBill = useCallback(async (customerId: string) => {
+    const printUrl = `http://localhost:3003/api/bills/print/${customerId}`;
+    try {
+      await printPdfFromUrl(printUrl);
+    } catch {
+      window.open(printUrl, '_blank');
+    }
+  }, []);
+
+  const handleSubmitPayment = useCallback(async () => {
+    if (!paymentCustomer?._id) return;
+
+    const unpaidAmount = getRowUnpaidAmount(paymentCustomer);
+    const amount = Number(paymentAmount);
+
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setPaymentError('Payment Amount must be greater than 0.');
+      return;
+    }
+
+    if (amount > unpaidAmount) {
+      setPaymentError(`Payment Amount cannot be greater than unpaid amount (Rs ${unpaidAmount.toFixed(2)}).`);
+      return;
+    }
+
+    setSubmittingPayment(true);
+    setPaymentError('');
+    try {
+      const response = await addCustomerPayment(paymentCustomer._id, amount);
+      const successMessage = getApiMessage(response) || 'Payment added successfully.';
+      toast.success(successMessage);
+      dispatch(showAlert({ message: successMessage, severity: 'success' }));
+      handleClosePayment();
+      await fetchCustomers();
+    } catch (err) {
+      const errorMessage = getApiErrorMessage(err) || 'Failed to add payment.';
+      setPaymentError(errorMessage);
+      toast.error(errorMessage);
+      dispatch(showAlert({ message: errorMessage, severity: 'error' }));
+    } finally {
+      setSubmittingPayment(false);
+    }
+  }, [dispatch, fetchCustomers, handleClosePayment, paymentAmount, paymentCustomer]);
 
   return (
     <DashboardContent>
@@ -225,7 +333,6 @@ export function CustomersView() {
           variant="contained"
           startIcon={<Iconify icon="mingcute:add-line" />}
           onClick={handleOpenNew}
-          // disabled={!clientItems.length}
         >
           New Sale
         </Button>
@@ -259,32 +366,20 @@ export function CustomersView() {
               ),
             }}
           />
-          <TextField
-            value={filterBillNumber}
-            onChange={(e) => {
-              setFilterBillNumber(e.target.value.replace(/\D/g, ''));
-              table.onResetPage();
-            }}
-            placeholder="Bill number"
-            size="small"
-            type="number"
-            inputProps={{ min: 0 }}
-            sx={{ width: 140 }}
-          />
         </Toolbar>
 
         <Scrollbar>
           <TableContainer sx={{ overflow: 'unset' }}>
-            <Table sx={{ minWidth: 800 }}>
+            <Table sx={{ minWidth: 900 }}>
               <TableHead>
                 <TableRow>
                   {[
-                    { id: 'customerName', label: 'Customer' },
-                    { id: 'billNumber', label: 'Bill #' },
-                    { id: 'itemNumber', label: 'Item' },
-                    // { id: 'boxQuantity', label: 'Qty' },
-                    // { id: 'size', label: 'Size' },
+                    { id: 'billNumber', label: 'Bill Number' },
+                    { id: 'customerName', label: 'Customer Name' },
                     { id: 'grandTotal', label: 'Grand Total' },
+                    { id: 'paidAmount', label: 'Paid Amount' },
+                    { id: 'unpaidAmount', label: 'Unpaid Amount' },
+                    { id: 'paymentStatus', label: 'Payment Status' },
                   ].map((col) => (
                     <TableCell key={col.id} sortDirection={table.orderBy === col.id ? table.order : false}>
                       <TableSortLabel
@@ -302,53 +397,92 @@ export function CustomersView() {
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={5} align="center" sx={{ py: 10 }}>
+                    <TableCell colSpan={7} align="center" sx={{ py: 10 }}>
                       Loading...
                     </TableCell>
                   </TableRow>
                 ) : (
-                  dataFiltered.map((row) => (
-                    <TableRow hover key={row._id}>
-                      <TableCell>{row.customerName}</TableCell>
-                      <TableCell>{row.billNumber}</TableCell>
-                      <TableCell>{row.itemNumber ?? row.items?.[0]?.itemNumber ?? '—'}</TableCell>
-                      {/* <TableCell>{row.boxQuantity ?? row.items?.[0]?.boxQuantity ?? '—'}</TableCell>
-                      <TableCell>{row.size || row.items?.[0]?.size || '—'}</TableCell> */}
-                      <TableCell>₹{row.grandTotal ?? row.items?.[0]?.grandTotal ?? 0}</TableCell>
-                      <TableCell align="right">
-                        <Tooltip title="Edit">
-                          <span>
-                            <IconButton onClick={() => handleOpenEdit(row)}>
-                              <Iconify icon="solar:pen-bold" />
+                  dataFiltered.map((row) => {
+                    const grandTotal = getRowGrandTotal(row);
+                    const paidAmount = getRowPaidAmount(row);
+                    const unpaidAmount = getRowUnpaidAmount(row);
+                    const paymentStatus = getRowPaymentStatus(row);
+
+                    return (
+                      <TableRow hover key={row._id}>
+                        <TableCell>{row.billNumber}</TableCell>
+                        <TableCell>{row.customerName || '-'}</TableCell>
+                        <TableCell>Rs {grandTotal.toFixed(2)}</TableCell>
+                        <TableCell>Rs {paidAmount.toFixed(2)}</TableCell>
+                        <TableCell>Rs {unpaidAmount.toFixed(2)}</TableCell>
+                        <TableCell>
+                          <Chip
+                            size="small"
+                            label={paymentStatus === 'paid' ? 'Paid' : 'Unpaid'}
+                            color={paymentStatus === 'paid' ? 'success' : 'error'}
+                          />
+                        </TableCell>
+                        <TableCell align="right">
+                          {unpaidAmount > 0 && (
+                            <Tooltip title="Add Payment">
+                              <IconButton
+                                color="primary"
+                                onClick={() => handleOpenPayment(row)}
+                              >
+                                <Iconify icon="mingcute:add-line" />
+                              </IconButton>
+                            </Tooltip>
+                          )}
+                          {/* <Tooltip title="View Payment History">
+                            <IconButton
+                              color="primary"
+                              onClick={() => navigate(`/client-history?billNumber=${row.billNumber}`)}
+                            >
+                              <Iconify icon="solar:eye-bold" />
                             </IconButton>
-                          </span>
-                        </Tooltip>
-                        <Tooltip title="Delete">
-                          <IconButton color="error" onClick={() => handleOpenDelete(row)}>
-                            <Iconify icon="solar:trash-bin-trash-bold" />
-                          </IconButton>
-                        </Tooltip>
-                      </TableCell>
-                    </TableRow>
-                  ))
+                          </Tooltip> */}
+                          <Tooltip title="Print Bill">
+                            <IconButton
+                              color="info"
+                              onClick={() => {
+                                void handlePrintBill(row._id);
+                              }}
+                            >
+                              <Iconify icon="solar:share-bold" />
+                            </IconButton>
+                          </Tooltip>
+                          <Tooltip title="Edit">
+                            <span>
+                              <IconButton onClick={() => handleOpenEdit(row)}>
+                                <Iconify icon="solar:pen-bold" />
+                              </IconButton>
+                            </span>
+                          </Tooltip>
+                          <Tooltip title="Delete">
+                            <IconButton color="error" onClick={() => handleOpenDelete(row)}>
+                              <Iconify icon="solar:trash-bin-trash-bold" />
+                            </IconButton>
+                          </Tooltip>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })
                 )}
 
                 {notFound && (
                   <TableRow>
-                    <TableCell colSpan={5} align="center" sx={{ py: 10 }}>
+                    <TableCell colSpan={7} align="center" sx={{ py: 10 }}>
                       <Typography variant="h6" paragraph>
                         Not found
                       </Typography>
-                      <Typography variant="body2">
-                        No sales match your filters.
-                      </Typography>
+                      <Typography variant="body2">No sales match your filters.</Typography>
                     </TableCell>
                   </TableRow>
                 )}
 
-                {!loading && !dataFiltered.length && !filterName && !filterBillNumber && (
+                {!loading && !dataFiltered.length && !filterName && (
                   <TableRow>
-                    <TableCell colSpan={5} align="center" sx={{ py: 10 }}>
+                    <TableCell colSpan={7} align="center" sx={{ py: 10 }}>
                       No sales yet. Add client items first, then create a sale.
                     </TableCell>
                   </TableRow>
@@ -369,7 +503,7 @@ export function CustomersView() {
           count={totalCustomers}
           rowsPerPage={table.rowsPerPage}
           onPageChange={table.onChangePage}
-          rowsPerPageOptions={[5, 10, 15, 25]}
+          rowsPerPageOptions={[50, 100, 150, 200]}
           onRowsPerPageChange={table.onChangeRowsPerPage}
           labelRowsPerPage="Rows per page :"
         />
@@ -381,6 +515,38 @@ export function CustomersView() {
         onConfirm={handleConfirmDelete}
         customer={customerToDelete}
       />
+
+      <Dialog open={paymentDialogOpen} onClose={handleClosePayment} fullWidth maxWidth="xs">
+        <DialogTitle>Add Payment</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, mb: 2 }}>
+            Bill No: {paymentCustomer?.billNumber ?? '-'} | Unpaid: Rs {getRowUnpaidAmount(paymentCustomer).toFixed(2)}
+          </Typography>
+          <TextField
+            autoFocus
+            fullWidth
+            type="number"
+            label="Payment Amount"
+            inputProps={{ min: 0, step: 0.01 }}
+            value={paymentAmount}
+            onChange={(e) => {
+              setPaymentAmount(e.target.value);
+              if (paymentError) setPaymentError('');
+            }}
+            error={Boolean(paymentError)}
+            helperText={paymentError || ''}
+            disabled={submittingPayment}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleClosePayment} disabled={submittingPayment}>
+            Cancel
+          </Button>
+          <Button onClick={() => void handleSubmitPayment()} variant="contained" disabled={submittingPayment}>
+            {submittingPayment ? 'Saving...' : 'Save'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </DashboardContent>
   );
 }

@@ -55,6 +55,7 @@ type ClientHistoryViewProps = {
 };
 
 type SubTabValue = 'history' | 'daywise' | 'monthwise' | 'ledger';
+type EntryTypeFilter = 'all' | 'sale' | 'return';
 
 const PAYMENT_MODE_OPTIONS = [
   'Cash',
@@ -69,17 +70,20 @@ const PAYMENT_MODE_OPTIONS = [
   'Wallet',
 ] as const;
 
+const ENTRY_TYPE_FILTER_OPTIONS: EntryTypeFilter[] = ['all', 'sale', 'return'];
+
 export function ClientHistoryView({ clientId }: ClientHistoryViewProps) {
   const dispatch = useAppDispatch();
   const navigate = useNavigate();
   const [subTab, setSubTab] = useState<SubTabValue>('history');
   const [page, setPage] = useState(0);
-  const [rowsPerPage, setRowsPerPage] = useState(15);
+  const [rowsPerPage, setRowsPerPage] = useState(50);
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [totalHistory, setTotalHistory] = useState(0);
   const [billNumberFilter, setBillNumberFilter] = useState('');
   const [appliedBillNumber, setAppliedBillNumber] = useState<number | undefined>(undefined);
+  const [entryTypeFilter, setEntryTypeFilter] = useState<EntryTypeFilter>('all');
   const [history, setHistory] = useState<ClientHistory[]>([]);
   const [loading, setLoading] = useState(false);
   const [clientName, setClientName] = useState('');
@@ -97,6 +101,9 @@ export function ClientHistoryView({ clientId }: ClientHistoryViewProps) {
   const [paymentNote, setPaymentNote] = useState('');
   const [paymentSubmitting, setPaymentSubmitting] = useState(false);
 
+  const formatCurrency = (amount: number) =>
+    amount.toLocaleString('en-IN', { style: 'currency', currency: 'INR' });
+
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedSearch(search), 500);
     return () => clearTimeout(timer);
@@ -113,6 +120,7 @@ export function ClientHistoryView({ clientId }: ClientHistoryViewProps) {
                 page: page + 1,
                 limit: rowsPerPage,
                 search: debouncedSearch || undefined,
+                entryType: entryTypeFilter === 'all' ? undefined : entryTypeFilter,
               },
             })
           ).unwrap()
@@ -120,6 +128,7 @@ export function ClientHistoryView({ clientId }: ClientHistoryViewProps) {
             fetchClientHistory({
               billNumber: appliedBillNumber,
               limit: 500,
+              entryType: entryTypeFilter === 'all' ? undefined : entryTypeFilter,
             })
           ).unwrap();
       setHistory(res.data);
@@ -130,7 +139,7 @@ export function ClientHistoryView({ clientId }: ClientHistoryViewProps) {
     } finally {
       setLoading(false);
     }
-  }, [appliedBillNumber, clientId, debouncedSearch, dispatch, page, rowsPerPage]);
+  }, [appliedBillNumber, clientId, debouncedSearch, dispatch, entryTypeFilter, page, rowsPerPage]);
 
   const fetchClient = useCallback(async () => {
     if (!clientId) return;
@@ -341,23 +350,35 @@ export function ClientHistoryView({ clientId }: ClientHistoryViewProps) {
               }}
             >
               {clientId ? (
-                <TextField
-                  value={search}
-                  onChange={(e) => {
-                    setSearch(e.target.value);
-                    setPage(0);
-                  }}
-                  placeholder="Search history..."
-                  size="small"
-                  sx={{ width: 280 }}
-                  InputProps={{
-                    startAdornment: (
-                      <InputAdornment position="start">
-                        <Iconify icon="eva:search-fill" sx={{ color: 'text.disabled', width: 20, height: 20 }} />
-                      </InputAdornment>
-                    ),
-                  }}
-                />
+                <>
+                  <TextField
+                    value={search}
+                    onChange={(e) => {
+                      setSearch(e.target.value);
+                      setPage(0);
+                    }}
+                    placeholder="Search history..."
+                    size="small"
+                    sx={{ width: 280 }}
+                    InputProps={{
+                      startAdornment: (
+                        <InputAdornment position="start">
+                          <Iconify icon="eva:search-fill" sx={{ color: 'text.disabled', width: 20, height: 20 }} />
+                        </InputAdornment>
+                      ),
+                    }}
+                  />
+                  <Autocomplete
+                    options={ENTRY_TYPE_FILTER_OPTIONS}
+                    value={entryTypeFilter}
+                    onChange={(_e, value) => {
+                      setEntryTypeFilter(value ?? 'all');
+                      setPage(0);
+                    }}
+                    sx={{ width: 180 }}
+                    renderInput={(params) => <TextField {...params} label="Type" size="small" />}
+                  />
+                </>
               ) : (
                 <>
                   <TextField
@@ -379,9 +400,16 @@ export function ClientHistoryView({ clientId }: ClientHistoryViewProps) {
                   <Button variant="outlined" onClick={handleApplyBillFilter}>
                     Apply
                   </Button>
+                  <Autocomplete
+                    options={ENTRY_TYPE_FILTER_OPTIONS}
+                    value={entryTypeFilter}
+                    onChange={(_e, value) => setEntryTypeFilter(value ?? 'all')}
+                    sx={{ width: 180 }}
+                    renderInput={(params) => <TextField {...params} label="Type" size="small" />}
+                  />
                   {appliedBillNumber !== undefined && (
                     <Typography variant="body2" color="text.secondary">
-                      Showing bill #{appliedBillNumber}
+                      Showing bill {appliedBillNumber}
                     </Typography>
                   )}
                 </>
@@ -393,16 +421,18 @@ export function ClientHistoryView({ clientId }: ClientHistoryViewProps) {
                 <Table sx={{ minWidth: 640 }}>
                   <TableHead>
                     <TableRow>
-                      <TableCell>Bill #</TableCell>
+                      <TableCell>Bill Number</TableCell>
                       <TableCell>Item Number</TableCell>
+                      <TableCell>Type</TableCell>
                       <TableCell align="right">Box Qty</TableCell>
+                      <TableCell align="right">Size</TableCell>
                       <TableCell align="right">Total Price</TableCell>
                     </TableRow>
                   </TableHead>
                   <TableBody>
                     {loading ? (
                       <TableRow>
-                        <TableCell colSpan={4} align="center" sx={{ py: 10 }}>
+                        <TableCell colSpan={6} align="center" sx={{ py: 10 }}>
                           Loading...
                         </TableCell>
                       </TableRow>
@@ -416,20 +446,27 @@ export function ClientHistoryView({ clientId }: ClientHistoryViewProps) {
                               Old: {row.oldItemName || '—'}
                             </Typography>
                           </TableCell>
+                          <TableCell sx={{ textTransform: 'capitalize' }}>{row.entryType ?? 'sale'}</TableCell>
                           <TableCell align="right">{row.boxQuantity}</TableCell>
-                          <TableCell align="right">₹{row.totalPrice}</TableCell>
+                          <TableCell align="right">{row.size || '-'}</TableCell>
+                          <TableCell
+                            align="right"
+                            sx={{ color: row.totalPrice < 0 ? 'success.main' : 'text.primary', fontWeight: 600 }}
+                          >
+                            {formatCurrency(row.totalPrice ?? 0)}
+                          </TableCell>
                         </TableRow>
                       ))
                     )}
 
                     {!loading && !history.length && (
                       <TableRow>
-                        <TableCell colSpan={4} align="center" sx={{ py: 10 }}>
+                        <TableCell colSpan={6} align="center" sx={{ py: 10 }}>
                           <Typography variant="body2" color="text.secondary">
                             {clientId
                               ? 'No history found.'
                               : appliedBillNumber !== undefined
-                              ? `No client history for bill #${appliedBillNumber}.`
+                              ? `No client history for bill ${appliedBillNumber}.`
                               : 'Enter a bill number and click Apply, or leave empty to see all.'}
                           </Typography>
                         </TableCell>
@@ -447,7 +484,7 @@ export function ClientHistoryView({ clientId }: ClientHistoryViewProps) {
                 count={totalHistory}
                 rowsPerPage={rowsPerPage}
                 onPageChange={handleChangePage}
-                rowsPerPageOptions={[5, 10, 15, 25]}
+                rowsPerPageOptions={[50, 100, 150, 200]}
                 onRowsPerPageChange={handleChangeRowsPerPage}
                 labelRowsPerPage="Rows per page :"
               />
@@ -466,7 +503,7 @@ export function ClientHistoryView({ clientId }: ClientHistoryViewProps) {
                 }}
               >
                 <Typography variant="h6">
-                  Total client cost: <strong>₹{totalClientCost.toFixed(2)}</strong>
+                  Net total: <strong>{formatCurrency(totalClientCost)}</strong>
                 </Typography>
               </Box>
             )}
@@ -672,22 +709,45 @@ export function ClientHistoryView({ clientId }: ClientHistoryViewProps) {
                 >
                   <Card variant="outlined" sx={{ p: 2 }}>
                     <Typography variant="caption" color="text.secondary">
-                      Total Purchase
+                      Total Sale
                     </Typography>
-                    <Typography variant="h6">₹{ledger.totalPurchase.toFixed(2)}</Typography>
+                    <Typography variant="h6">{formatCurrency(ledger.totalSale)}</Typography>
+                  </Card>
+                  <Card variant="outlined" sx={{ p: 2 }}>
+                    <Typography variant="caption" color="text.secondary">
+                      Total Return
+                    </Typography>
+                    <Typography variant="h6" color="success.main">
+                      {formatCurrency(ledger.totalReturn)}
+                    </Typography>
+                  </Card>
+                  <Card variant="outlined" sx={{ p: 2 }}>
+                    <Typography variant="caption" color="text.secondary">
+                      Net Purchase
+                    </Typography>
+                    <Typography variant="h6">{formatCurrency(ledger.totalPurchase)}</Typography>
                   </Card>
                   <Card variant="outlined" sx={{ p: 2 }}>
                     <Typography variant="caption" color="text.secondary">
                       Total Paid
                     </Typography>
-                    <Typography variant="h6">₹{ledger.totalPaid.toFixed(2)}</Typography>
+                    <Typography variant="h6">{formatCurrency(ledger.totalPaid)}</Typography>
                   </Card>
                   <Card variant="outlined" sx={{ p: 2 }}>
                     <Typography variant="caption" color="text.secondary">
                       Pending
                     </Typography>
-                    <Typography variant="h6" color={ledger.pendingAmount > 0 ? 'error.main' : 'text.primary'}>
-                      ₹{ledger.pendingAmount.toFixed(2)}
+                    <Typography
+                      variant="h6"
+                      color={
+                        ledger.pendingAmount < 0
+                          ? 'success.main'
+                          : ledger.pendingAmount > 0
+                            ? 'error.main'
+                            : 'text.primary'
+                      }
+                    >
+                      {formatCurrency(ledger.pendingAmount)}
                     </Typography>
                   </Card>
                 </Box>
@@ -706,7 +766,7 @@ export function ClientHistoryView({ clientId }: ClientHistoryViewProps) {
                       <TableBody>
                         {ledger.transactions.length === 0 ? (
                           <TableRow>
-                            <TableCell colSpan={4} align="center" sx={{ py: 6 }}>
+                            <TableCell colSpan={3} align="center" sx={{ py: 6 }}>
                               <Typography variant="body2" color="text.secondary">
                                 No transactions yet.
                               </Typography>
@@ -718,7 +778,7 @@ export function ClientHistoryView({ clientId }: ClientHistoryViewProps) {
                               <TableCell>{tx.date ? formatDate(tx.date) : tx.createdAt ? formatDate(tx.createdAt) : '—'}</TableCell>
                               {/* <TableCell>{tx.type || '—'}</TableCell> */}
                               <TableCell>{tx.paymentMode}</TableCell>
-                              <TableCell align="right">₹{tx.amount.toFixed(2)}</TableCell>
+                              <TableCell align="right">{formatCurrency(tx.amount ?? 0)}</TableCell>
                             </TableRow>
                           ))
                         )}

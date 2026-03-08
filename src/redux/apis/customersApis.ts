@@ -7,8 +7,13 @@ export type Customer = {
   customerName: string;
   address?: string;
   mobileNumber?: string;
+  note?: string;
+  vehicleNumber?: string;
   date?: string;
   billNumber: number;
+  paymentStatus?: 'paid' | 'unpaid';
+  paidAmount?: number;
+  unpaidAmount?: number;
   itemNumber?: string;
   boxQuantity?: number;
   size?: string;
@@ -35,14 +40,20 @@ export type CustomerPayload = {
   customerName: string;
   address: string;
   mobileNumber: string;
+  note?: string;
+  vehicleNumber?: string;
   date: string;
   billNumber: number;
+  paymentStatus?: 'paid' | 'unpaid';
+  paidAmount?: number;
+  unpaidAmount?: number;
   items: CustomerItemPayload[];
 };
 
 export type CustomerItemPayload = {
   itemNumber: string;
   boxQuantity: number;
+  returnBoxQuantity?: number;
   size?: string;
   sellPrice: number;
   grandTotal?: number;
@@ -60,6 +71,27 @@ export type ApiResponse<T> = {
 };
 
 export type CustomerMutationResponse = ApiResponse<Customer | string | null>;
+export type CheckCustomerMobileRecentBill = {
+  _id: string;
+  billNumber: number;
+  date?: string;
+  customerName?: string;
+};
+
+export type CheckCustomerMobileResponse = {
+  exists: boolean;
+  mobile: string;
+  count: number;
+  recentBills: CheckCustomerMobileRecentBill[];
+};
+
+export type CustomerPayment = {
+  _id?: string;
+  amount: number;
+  date?: string;
+  paymentDate?: string;
+  createdAt?: string;
+};
 
 function normalizeMutationResponse(payload: any): CustomerMutationResponse {
   if (
@@ -124,7 +156,47 @@ export const deleteCustomer = async (id: string): Promise<CustomerMutationRespon
   return normalizeMutationResponse(response.data);
 };
 
+export const addCustomerPayment = async (
+  id: string,
+  amount: number
+): Promise<CustomerMutationResponse> => {
+  const response = await axios.post(`/customers/${id}/payment`, { amount });
+  return normalizeMutationResponse(response.data);
+};
+
+export const getCustomerPayments = async (id: string): Promise<CustomerPayment[]> => {
+  const response = await axios.get<
+    CustomerPayment[] | { data?: CustomerPayment[]; payments?: CustomerPayment[] }
+  >(`/customers/${id}/payments`);
+  const body = response.data;
+  if (Array.isArray(body)) return body;
+
+  if (body && typeof body === 'object') {
+    const wrapped = body as { data?: unknown; payments?: unknown };
+    if (Array.isArray(wrapped.data)) return wrapped.data as CustomerPayment[];
+    if (Array.isArray(wrapped.payments)) return wrapped.payments as CustomerPayment[];
+  }
+
+  return [];
+};
+
 export const getNextBillNumber = async (): Promise<NextBillNumberResponse> => {
   const response = await axios.get<NextBillNumberResponse>('/customers/next-bill-number');
   return response.data;
+};
+
+export const checkCustomerMobile = async (
+  mobile: string,
+  limit = 5
+): Promise<CheckCustomerMobileResponse> => {
+  const response = await axios.get<CheckCustomerMobileResponse>('/customers/check-mobile', {
+    params: { mobile, limit },
+  });
+  const body = response.data;
+  return {
+    exists: Boolean(body?.exists),
+    mobile: body?.mobile ?? mobile,
+    count: typeof body?.count === 'number' ? body.count : 0,
+    recentBills: Array.isArray(body?.recentBills) ? body.recentBills : [],
+  };
 };

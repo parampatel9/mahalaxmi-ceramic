@@ -8,6 +8,8 @@ export type ClientHistory = {
   itemNumber: string;
   oldItemName?: string;
   boxQuantity: number;
+  size?: string;
+  entryType?: 'sale' | 'return';
   actualPrice: number;
   totalPrice: number;
   createdAt?: string;
@@ -32,6 +34,7 @@ export const getClientHistory = async (params?: {
   billNumber?: number;
   search?: string;
   sort?: string;
+  entryType?: 'sale' | 'return';
 }): Promise<ClientHistoryResponse> => {
   const response = await axios.get<ClientHistoryResponse>('/client-history', { params });
   const body = response.data;
@@ -48,6 +51,7 @@ export const getClientHistoryByClient = async (
     limit?: number;
     search?: string;
     date?: string;
+    entryType?: 'sale' | 'return';
   }
 ): Promise<ClientHistoryResponse> => {
   const response = await axios.get<ClientHistoryResponse>(`/clients/${clientId}/history`, {
@@ -100,9 +104,9 @@ export type DayBillsResponse = {
   bills: DayBill[];
 };
 
-export const getClientDayBills = async (date: string): Promise<DayBillsResponse> => {
+export const getClientDayBills = async (date: string, clientId?: string): Promise<DayBillsResponse> => {
   const response = await axios.get<DayBillsResponse | { data?: DayBillsResponse }>('/bills/by-date', {
-    params: { date },
+    params: { date, ...(clientId ? { clientId } : {}) },
   });
   const raw = response.data as DayBillsResponse & { data?: DayBillsResponse };
   const body = raw?.data && typeof raw.data === 'object' ? raw.data : raw;
@@ -169,6 +173,8 @@ export type LedgerTransaction = {
 };
 
 export type ClientLedgerResponse = {
+  totalSale: number;
+  totalReturn: number;
   totalPurchase: number;
   totalPaid: number;
   pendingAmount: number;
@@ -179,6 +185,8 @@ export const getClientLedger = async (clientId: string): Promise<ClientLedgerRes
   const response = await axios.get<ClientLedgerResponse>(`/clients/${clientId}/ledger`);
   const body = response.data;
   return {
+    totalSale: body?.totalSale ?? 0,
+    totalReturn: body?.totalReturn ?? 0,
     totalPurchase: body?.totalPurchase ?? 0,
     totalPaid: body?.totalPaid ?? 0,
     pendingAmount: body?.pendingAmount ?? 0,

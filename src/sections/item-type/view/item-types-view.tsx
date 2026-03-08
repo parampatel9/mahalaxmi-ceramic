@@ -39,7 +39,7 @@ import { ItemTypeDeleteDialog } from '../item-type-delete-dialog';
 function useTable() {
   const [page, setPage] = useState(0);
   const [orderBy, setOrderBy] = useState('itemType');
-  const [rowsPerPage, setRowsPerPage] = useState(15);
+  const [rowsPerPage, setRowsPerPage] = useState(50);
   const [order, setOrder] = useState<'asc' | 'desc'>('asc');
 
   const onSort = useCallback(
@@ -313,7 +313,7 @@ export function ItemTypesView() {
           count={totalItems}
           rowsPerPage={table.rowsPerPage}
           onPageChange={table.onChangePage}
-          rowsPerPageOptions={[5, 10, 15, 25]}
+          rowsPerPageOptions={[50, 100, 150, 200]}
           onRowsPerPageChange={table.onChangeRowsPerPage}
           labelRowsPerPage="Rows per page :"
         />

@@ -32,7 +32,7 @@ export function CustomerDeleteDialog({
       <DialogTitle>Delete Sale (Customer)</DialogTitle>
       <DialogContent>
         <DialogContentText>
-          Are you sure you want to delete the sale for &quot;{customer?.customerName}&quot; (Bill #
+          Are you sure you want to delete the sale for &quot;{customer?.customerName}&quot; (Bill
           {customer?.billNumber}, {customer?.itemNumber ?? customer?.items?.[0]?.itemNumber ?? '—'})? This action
           cannot be undone.
         </DialogContentText>

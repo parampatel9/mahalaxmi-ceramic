@@ -74,7 +74,14 @@ export const fetchClientHistory = createAsyncThunk(
   'clientHistory/fetchClientHistory',
   async (
     params:
-      | { page?: number; limit?: number; billNumber?: number; search?: string; sort?: string }
+      | {
+          page?: number;
+          limit?: number;
+          billNumber?: number;
+          search?: string;
+          sort?: string;
+          entryType?: 'sale' | 'return';
+        }
       | undefined,
     thunkAPI
   ) => {
@@ -90,7 +97,10 @@ export const fetchClientHistory = createAsyncThunk(
 export const fetchClientHistoryByClient = createAsyncThunk(
   'clientHistory/fetchClientHistoryByClient',
   async (
-    payload: { clientId: string; params?: { page?: number; limit?: number; search?: string } },
+    payload: {
+      clientId: string;
+      params?: { page?: number; limit?: number; search?: string; entryType?: 'sale' | 'return' };
+    },
     thunkAPI
   ) => {
     try {

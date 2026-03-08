@@ -23,6 +23,21 @@ export type ClientResponse = {
   pagination: Pagination;
 };
 
+export type ClientLedgerSummary = {
+  _id: string;
+  clientName: string;
+  totalSale: number;
+  totalReturn: number;
+  totalPurchase: number;
+  totalPaid: number;
+  pendingAmount: number;
+};
+
+export type ClientLedgerListResponse = {
+  data: ClientLedgerSummary[];
+  pagination: Pagination;
+};
+
 export type ClientPayload = {
   clientName: string;
   totalItem: number;
@@ -89,4 +104,21 @@ export const getClient = async (id: string): Promise<Client> => {
 export const deleteClient = async (id: string): Promise<ClientMutationResponse> => {
   const response = await axios.delete(`/clients/${id}`);
   return normalizeMutationResponse(response.data);
+};
+
+export const getClientLedgerList = async (params?: {
+  page?: number;
+  limit?: number;
+  searchFields?: string;
+}): Promise<ClientLedgerListResponse> => {
+  const response = await axios.post<ClientLedgerListResponse>('/clients/list-ledger', {
+    searchFields: params?.searchFields ?? '',
+    page: params?.page ?? 1,
+    limit: params?.limit ?? 15,
+  });
+  const body = response.data;
+  return {
+    data: Array.isArray(body?.data) ? body.data : [],
+    pagination: body?.pagination ?? { total: 0, page: 1, limit: 15, totalPages: 0 },
+  };
 };

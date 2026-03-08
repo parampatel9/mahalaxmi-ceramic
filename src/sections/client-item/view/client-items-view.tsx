@@ -1,7 +1,7 @@
 import type { AxiosError } from 'axios';
 
 import { toast } from 'react-toastify';
-import { useState, useEffect, useCallback } from 'react';
+import { useRef, useState, useEffect, useCallback } from 'react';
 import { useNavigate, Link as RouterLink } from 'react-router-dom';
 
 import Box from '@mui/material/Box';
@@ -10,8 +10,11 @@ import Tabs from '@mui/material/Tabs';
 import Card from '@mui/material/Card';
 import Chip from '@mui/material/Chip';
 import Link from '@mui/material/Link';
+import Alert from '@mui/material/Alert';
 import Table from '@mui/material/Table';
+import Stack from '@mui/material/Stack';
 import Button from '@mui/material/Button';
+import Dialog from '@mui/material/Dialog';
 import Tooltip from '@mui/material/Tooltip';
 import Toolbar from '@mui/material/Toolbar';
 import TableRow from '@mui/material/TableRow';
@@ -21,6 +24,9 @@ import TableCell from '@mui/material/TableCell';
 import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
 import IconButton from '@mui/material/IconButton';
+import DialogTitle from '@mui/material/DialogTitle';
+import DialogContent from '@mui/material/DialogContent';
+import DialogActions from '@mui/material/DialogActions';
 import TableContainer from '@mui/material/TableContainer';
 import TableSortLabel from '@mui/material/TableSortLabel';
 import InputAdornment from '@mui/material/InputAdornment';
@@ -30,11 +36,13 @@ import { useAppDispatch } from 'src/redux/hooks';
 import { showAlert } from 'src/redux/slices/alertSlice';
 import { DashboardContent } from 'src/layouts/dashboard';
 import { fetchClient as fetchClientById } from 'src/redux/slices/clientSlice';
+import { removeClientItem, fetchClientItems as fetchClientItemsThunk } from 'src/redux/slices/clientItemSlice';
 import {
   type ClientItem,
+  importClientItems,
   type PopulatedItemType,
+  type ClientItemImportError,
 } from 'src/redux/apis/clientItemsApis';
-import { removeClientItem, fetchClientItems as fetchClientItemsThunk } from 'src/redux/slices/clientItemSlice';
 
 import { Iconify } from 'src/components/iconify';
 import { Scrollbar } from 'src/components/scrollbar';
@@ -52,7 +60,7 @@ function getItemTypeName(itemTypeId?: string | PopulatedItemType): string {
 function useTable() {
   const [page, setPage] = useState(0);
   const [orderBy, setOrderBy] = useState('itemNumber');
-  const [rowsPerPage, setRowsPerPage] = useState(15);
+  const [rowsPerPage, setRowsPerPage] = useState(50);
   const [order, setOrder] = useState<'asc' | 'desc'>('asc');
 
   const onSort = useCallback(
@@ -108,6 +116,18 @@ function getApiErrorMessage(err: unknown) {
   return '';
 }
 
+function getImportValidationErrors(err: unknown): ClientItemImportError[] {
+  const axiosError = err as AxiosError<{ errors?: Array<Partial<ClientItemImportError>> }>;
+  const backendErrors = axiosError?.response?.data?.errors;
+  if (!Array.isArray(backendErrors)) return [];
+
+  return backendErrors.map((entry) => ({
+    row: typeof entry?.row === 'number' ? entry.row : 0,
+    field: typeof entry?.field === 'string' ? entry.field : '',
+    message: typeof entry?.message === 'string' ? entry.message : '',
+  }));
+}
+
 export function ClientItemsView({ clientId }: ClientItemsViewProps) {
   const navigate = useNavigate();
   const dispatch = useAppDispatch();
@@ -120,6 +140,11 @@ export function ClientItemsView({ clientId }: ClientItemsViewProps) {
   const [itemToDelete, setItemToDelete] = useState<ClientItem | null>(null);
   const [clientName, setClientName] = useState<string>('');
   const [totalItems, setTotalItems] = useState(0);
+  const [importingItems, setImportingItems] = useState(false);
+  const [importSuccessMessage, setImportSuccessMessage] = useState('');
+  const [importErrors, setImportErrors] = useState<ClientItemImportError[]>([]);
+  const [importErrorsOpen, setImportErrorsOpen] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -213,6 +238,71 @@ export function ClientItemsView({ clientId }: ClientItemsViewProps) {
     }
   }, [clientId, dispatch, itemToDelete, fetchItems, handleCloseDelete]);
 
+  const handleUploadItemsClick = useCallback(() => {
+    fileInputRef.current?.click();
+  }, []);
+
+  const handleCloseImportErrors = useCallback(() => {
+    setImportErrorsOpen(false);
+  }, []);
+
+  const handleImportFileChange = useCallback(
+    async (event: React.ChangeEvent<HTMLInputElement>) => {
+      const selectedFile = event.target.files?.[0];
+      event.target.value = '';
+      if (!selectedFile) return;
+
+      if (!/\.(csv|xlsx)$/i.test(selectedFile.name)) {
+        const invalidTypeMessage = 'Please upload only .xlsx or .csv file.';
+        toast.error(invalidTypeMessage);
+        dispatch(showAlert({ message: invalidTypeMessage, severity: 'error' }));
+        return;
+      }
+
+      setImportingItems(true);
+      setImportSuccessMessage('');
+
+      try {
+        const response = await importClientItems(clientId, selectedFile);
+
+        if (response.success) {
+          const successText = `${response.count} items imported successfully`;
+          setImportSuccessMessage(successText);
+          setImportErrors([]);
+          setImportErrorsOpen(false);
+          toast.success(successText);
+          dispatch(showAlert({ message: successText, severity: 'success' }));
+          await fetchItems();
+          return;
+        }
+
+        if (response.errors.length > 0) {
+          setImportErrors(response.errors);
+          setImportErrorsOpen(true);
+        } else {
+          const failedMessage = response.message || 'Failed to import items.';
+          toast.error(failedMessage);
+          dispatch(showAlert({ message: failedMessage, severity: 'error' }));
+        }
+      } catch (err) {
+        const validationErrors = getImportValidationErrors(err);
+        if (validationErrors.length > 0) {
+          setImportSuccessMessage('');
+          setImportErrors(validationErrors);
+          setImportErrorsOpen(true);
+          return;
+        }
+
+        const errorMessage = getApiErrorMessage(err) || 'Failed to import items.';
+        toast.error(errorMessage);
+        dispatch(showAlert({ message: errorMessage, severity: 'error' }));
+      } finally {
+        setImportingItems(false);
+      }
+    },
+    [clientId, dispatch, fetchItems]
+  );
+
   if (!clientId) {
     return (
       <DashboardContent>
@@ -270,6 +360,22 @@ export function ClientItemsView({ clientId }: ClientItemsViewProps) {
       </Box>
 
       <Card>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".csv,.xlsx"
+          style={{ display: 'none' }}
+          onChange={handleImportFileChange}
+        />
+
+        {importSuccessMessage && (
+          <Box sx={{ px: 3, pt: 2 }}>
+            <Alert severity="success" onClose={() => setImportSuccessMessage('')}>
+              {importSuccessMessage}
+            </Alert>
+          </Box>
+        )}
+
         <Toolbar
           sx={{
             height: 96,
@@ -293,6 +399,23 @@ export function ClientItemsView({ clientId }: ClientItemsViewProps) {
               ),
             }}
           />
+          <Stack direction="row" spacing={1}>
+            <Button
+              variant="outlined"
+              onClick={handleUploadItemsClick}
+              disabled={importingItems}
+            >
+              {importingItems ? 'Uploading...' : 'Upload File'}
+            </Button>
+            <Button
+              variant="text"
+              component="a"
+              href="/templates/client_items_import_template.xlsx"
+              download
+            >
+              Download Template
+            </Button>
+          </Stack>
         </Toolbar>
 
         <Scrollbar>
@@ -396,7 +519,7 @@ export function ClientItemsView({ clientId }: ClientItemsViewProps) {
           count={totalItems}
           rowsPerPage={table.rowsPerPage}
           onPageChange={table.onChangePage}
-          rowsPerPageOptions={[5, 10, 15, 25]}
+          rowsPerPageOptions={[50, 100, 150, 200]}
           onRowsPerPageChange={table.onChangeRowsPerPage}
           labelRowsPerPage="Rows per page :"
         />
@@ -408,6 +531,38 @@ export function ClientItemsView({ clientId }: ClientItemsViewProps) {
         onConfirm={handleConfirmDelete}
         item={itemToDelete}
       />
+
+      <Dialog
+        open={importErrorsOpen}
+        onClose={handleCloseImportErrors}
+        fullWidth
+        maxWidth="md"
+      >
+        <DialogTitle>Import Errors</DialogTitle>
+        <DialogContent>
+          <Table size="small">
+            <TableHead>
+              <TableRow>
+                <TableCell>Row</TableCell>
+                <TableCell>Field</TableCell>
+                <TableCell>Error Message</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {importErrors.map((error, index) => (
+                <TableRow key={`${error.row}-${error.field}-${index}`}>
+                  <TableCell>{error.row}</TableCell>
+                  <TableCell>{error.field}</TableCell>
+                  <TableCell>{error.message}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCloseImportErrors} variant="outlined">Close</Button>
+        </DialogActions>
+      </Dialog>
     </DashboardContent>
   );
 }

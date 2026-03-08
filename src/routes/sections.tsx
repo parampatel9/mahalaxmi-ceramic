@@ -34,6 +34,7 @@ export const CustomerEditPage = lazy(() => import('src/pages/customer-edit'));
 export const ClientHistoryPage = lazy(() => import('src/pages/client-history'));
 export const ClientClientHistoryPage = lazy(() => import('src/pages/client-client-history'));
 export const DayBillsPage = lazy(() => import('src/pages/day-bills'));
+export const ClientPendingPaymentPage = lazy(() => import('src/pages/client-pending-payment'));
 
 const renderFallback = () => (
   <Box
@@ -76,6 +77,7 @@ export const routesSection: RouteObject[] = [
       { path: 'clients/:clientId/edit', element: <ClientEditPage /> },
       { path: 'clients/:clientId/items', element: <ClientItemsPage /> },
       { path: 'clients/:clientId/history', element: <ClientClientHistoryPage /> },
+      { path: 'clients/pending-payments', element: <ClientPendingPaymentPage /> },
       { path: 'day-bills', element: <DayBillsPage /> },
       { path: 'clients/:clientId/items/new', element: <ClientItemNewPage /> },
       { path: 'clients/:clientId/items/:itemId/edit', element: <ClientItemNewPage /> },

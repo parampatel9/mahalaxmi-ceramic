@@ -23,6 +23,11 @@ export const navData = [
     icon: icon('ic-user'),
   },
   {
+    title: 'Pending Payments',
+    path: '/clients/pending-payments',
+    icon: icon('ic-user'),
+  },
+  {
     title: 'Sales (Customers)',
     path: '/customers',
     icon: icon('ic-user'),

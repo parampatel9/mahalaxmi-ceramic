@@ -63,9 +63,9 @@ export const fetchClientItems = createAsyncThunk(
 
 export const fetchAllClientItems = createAsyncThunk(
   'clientItem/fetchAllClientItems',
-  async (params: { page?: number; limit?: number; search?: string } | undefined, thunkAPI) => {
+  async (payload, thunkAPI) => {
     try {
-      return await getAllClientItems(params);
+      return await getAllClientItems();
     } catch (error: any) {
       const message =
         error?.response?.data?.message || error?.message || 'Failed to fetch all client items';

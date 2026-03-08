@@ -19,6 +19,7 @@ import FormHelperText from '@mui/material/FormHelperText';
 type FormItem = {
   itemNumber: string;
   boxQuantity: string;
+  returnBoxQuantity: string;
   size: string;
   sellPrice: string;
 };
@@ -26,6 +27,7 @@ type FormItem = {
 const EMPTY_ITEM: FormItem = {
   itemNumber: '',
   boxQuantity: '',
+  returnBoxQuantity: '0',
   size: '',
   sellPrice: '',
 };
@@ -67,6 +69,8 @@ export function CustomerFormDialog({
           ? customer.items.map((item) => ({
               itemNumber: item.itemNumber ?? '',
               boxQuantity: item.boxQuantity ? String(item.boxQuantity) : '',
+              returnBoxQuantity:
+                item.returnBoxQuantity !== undefined ? String(item.returnBoxQuantity) : '0',
               size: item.size ?? '',
               sellPrice: item.sellPrice !== undefined ? String(item.sellPrice) : '',
             }))
@@ -74,6 +78,7 @@ export function CustomerFormDialog({
               {
                 itemNumber: customer?.itemNumber ?? '',
                 boxQuantity: customer?.boxQuantity ? String(customer.boxQuantity) : '',
+                returnBoxQuantity: '0',
                 size: customer?.size ?? '',
                 sellPrice: customer?.sellPrice !== undefined ? String(customer.sellPrice) : '',
               },
@@ -114,16 +119,24 @@ export function CustomerFormDialog({
     const parsedItems: CustomerItemPayload[] = items
       .map((item) => {
         const boxQuantityNum = parseInt(item.boxQuantity || '0', 10);
+        const returnBoxQuantityNum = parseInt(item.returnBoxQuantity || '0', 10);
         const sellPriceNum = parseFloat(item.sellPrice || '0');
         const normalized: CustomerItemPayload = {
           itemNumber: item.itemNumber.trim(),
           boxQuantity: boxQuantityNum,
+          returnBoxQuantity: returnBoxQuantityNum,
           sellPrice: sellPriceNum,
         };
         if (item.size.trim()) normalized.size = item.size.trim();
         return normalized;
       })
-      .filter((item) => item.itemNumber && item.boxQuantity > 0 && item.sellPrice >= 0);
+      .filter(
+        (item) =>
+          item.itemNumber &&
+          item.boxQuantity > 0 &&
+          (item.returnBoxQuantity ?? 0) >= 0 &&
+          item.sellPrice >= 0
+      );
 
     if (parsedItems.length !== items.length) {
       setItemsError(true);
@@ -222,6 +235,18 @@ export function CustomerFormDialog({
               />
 
               <TextField
+                label="Return Box Quantity"
+                type="number"
+                fullWidth
+                inputProps={{ min: 0 }}
+                value={item.returnBoxQuantity}
+                error={itemsError && parseInt(item.returnBoxQuantity || '0', 10) < 0}
+                onChange={(e) =>
+                  handleItemChange(index, 'returnBoxQuantity', e.target.value.replace(/\D/g, ''))
+                }
+              />
+
+              <TextField
                 label="Size (optional)"
                 fullWidth
                 placeholder="e.g. 24x24"
@@ -252,7 +277,7 @@ export function CustomerFormDialog({
 
           {itemsError && (
             <FormHelperText error>
-              Please fill all item fields correctly (item number, box quantity, and sell price).
+              Please fill all item fields correctly (item number, box quantity, return box quantity, and sell price).
             </FormHelperText>
           )}
 
